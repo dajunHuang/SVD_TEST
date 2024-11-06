@@ -200,7 +200,7 @@ int main(int argc, char *argv[]) {
     // print_matrix(n, n, VT.data(), ldvt);
     // std::printf("=====\n");
 
-    std::cout << "Cusolver SVD Double Latency: " << time << " ms" << std::endl;
+    std::cout << "Cusolver SVD (Double) Latency: " << time << " ms" << std::endl;
 
     /* free resources */
     CUDA_CHECK(cudaFree(d_A));
