@@ -86,14 +86,9 @@ int main(int argc, char *argv[]) {
     cublasHandle_t cublasH = NULL;
     cudaStream_t stream = NULL;
 
-    int m = 0, n = 0;
+    int m = 1024, n = 1024;
 
-    if(argc < 3)
-    {
-        m = 1024;
-        n = 1024;
-    }
-    else
+    if(argc >= 3)
     {
         m = atoi(argv[1]);
         n = atoi(argv[2]);

@@ -1,6 +1,6 @@
 *.asm
 *.o
 
-cusolver_svd/cusolver_gesvd_example
+cusolver_svd/cusolver_gesvd
 
 mkl_svd/lapacke_dgesvd
