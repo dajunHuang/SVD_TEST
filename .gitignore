@@ -4,3 +4,4 @@
 cusolver_svd/cusolver_gesvd
 
 mkl_svd/lapacke_dgesvd
+mkl_svd/lapacke_dgbbrd

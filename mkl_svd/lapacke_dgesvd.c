@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <string.h>
-#include "mkl_lapacke.h"
+#include "mkl.h"
 
 #define NUM_WARMUP 2
 #define NUM_REPEAT 5

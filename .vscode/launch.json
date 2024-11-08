@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",    
+    "configurations": [    
+        {    
+            "name": "C++ Launch (GDB)",    
+            "type": "cppdbg",    
+            "request": "launch",  
+            "targetArchitecture": "x64",    
+            "program": "${workspaceFolder}/mkl_svd/lapacke_dgebrd",
+            "args": [],
+            "stopAtEntry": false,    
+            "cwd": "${workspaceRoot}",    
+            "environment": [],    
+            "externalConsole": false,
+            "miDebuggerPath": "/usr/bin/gdb", 
+        }
+    ]
+}
