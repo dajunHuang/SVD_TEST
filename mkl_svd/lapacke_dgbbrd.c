@@ -4,8 +4,8 @@
 #include <string.h>
 #include "mkl.h"
 
-#define NUM_WARMUP 2
-#define NUM_REPEAT 5
+#define NUM_WARMUP 1
+#define NUM_REPEAT 1
 
 /* Auxiliary routine: printing a matrix */
 void print_matrix( char* desc, MKL_INT m, MKL_INT n, double* a, MKL_INT lda )
@@ -42,10 +42,11 @@ int main(int argc, char *argv[]) {
     double brd_cpu_time_used = 0;
 	double sqr_cpu_time_used = 0;
 
-    if(argc >= 3)
+    if(argc >= 4)
     {
         m = atoi(argv[1]);
         n = atoi(argv[2]);
+		ku = atoi(argv[3]);
     }
 
 	/* Locals */
@@ -104,41 +105,47 @@ int main(int argc, char *argv[]) {
 	// print_matrix( "Diagonal values", 1, minmn, d, 1 );
 	// print_matrix( "Off-Diagonal values", 1, minmn - 1, e, 1 );
 
-	memcpy(d, d_original, minmn * sizeof(double));
-	memcpy(e, e_original, (minmn - 1) * sizeof(double));
-	info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
-		d, e, NULL, 1, NULL, 1, NULL, 1); 
+	// memcpy(d, d_original, minmn * sizeof(double));
+	// memcpy(e, e_original, (minmn - 1) * sizeof(double));
+	// // info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
+	// // 	d, e, NULL, 1, NULL, 1, NULL, 1); 
+	// info = LAPACKE_dbdsdc(LAPACK_COL_MAJOR, 'U', 'N', minmn, d, e, 
+	// 	NULL, 1, NULL, 1, NULL, NULL);
 
-	if( info > 0 ) {
-		printf( "The algorithm computing SVD failed to converge.\n" );
-		exit( 1 );
-	}
+	// if( info > 0 ) {
+	// 	printf( "The algorithm computing SVD failed to converge.\n" );
+	// 	exit( 1 );
+	// }
 
-	for(int i = 0; i < NUM_WARMUP; ++i)
-	{
-		memcpy(d, d_original, minmn * sizeof(double));
-		memcpy(e, e_original, (minmn - 1) * sizeof(double));
-		info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
-			d, e, NULL, 1, NULL, 1, NULL, 1); 
-	}
+	// for(int i = 0; i < NUM_WARMUP; ++i)
+	// {
+	// 	memcpy(d, d_original, minmn * sizeof(double));
+	// 	memcpy(e, e_original, (minmn - 1) * sizeof(double));
+	// 	// info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
+	// 	// 	d, e, NULL, 1, NULL, 1, NULL, 1); 
+	// 	info = LAPACKE_dbdsdc(LAPACK_COL_MAJOR, 'U', 'N', minmn, d, e, 
+	// 		NULL, 1, NULL, 1, NULL, NULL);
+	// }
 
-	for(int i = 0; i < NUM_REPEAT; ++i)
-	{
-		start = clock();
-		memcpy(d, d_original, minmn * sizeof(double));
-		memcpy(e, e_original, (minmn - 1) * sizeof(double));
-		info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
-			d, e, NULL, 1, NULL, 1, NULL, 1); 
-		end = clock();
-		sqr_cpu_time_used += ((double) (end - start)) / CLOCKS_PER_SEC;
-	}
+	// for(int i = 0; i < NUM_REPEAT; ++i)
+	// {
+	// 	start = clock();
+	// 	memcpy(d, d_original, minmn * sizeof(double));
+	// 	memcpy(e, e_original, (minmn - 1) * sizeof(double));
+	// 	// info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
+	// 	// 	d, e, NULL, 1, NULL, 1, NULL, 1); 
+	// 	info = LAPACKE_dbdsdc(LAPACK_COL_MAJOR, 'U', 'N', minmn, d, e, 
+	// 		NULL, 1, NULL, 1, NULL, NULL);
+	// 	end = clock();
+	// 	sqr_cpu_time_used += ((double) (end - start)) / CLOCKS_PER_SEC;
+	// }
 
-	if( info > 0 ) {
-		printf( "The algorithm computing SVD failed to converge.\n" );
-		exit( 1 );
-	}
+	// if( info > 0 ) {
+	// 	printf( "The algorithm computing SVD failed to converge.\n" );
+	// 	exit( 1 );
+	// }
 
-	printf("LAPACKE GBBRD SQR (Double) Latency: %lf ms\n", 1000 * sqr_cpu_time_used / NUM_REPEAT);
+	// printf("LAPACKE GBBRD SQR (Double) Latency: %lf ms\n", 1000 * sqr_cpu_time_used / NUM_REPEAT);
 
 	exit( 0 );
 } /* End of LAPACKE_sgesvd Example */

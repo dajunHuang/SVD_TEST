@@ -103,8 +103,10 @@ int main(int argc, char *argv[]) {
 
 	memcpy(d, d_original, minmn * sizeof(double));
 	memcpy(e, e_original, (minmn - 1) * sizeof(double));
-	info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
-		d, e, NULL, 1, NULL, 1, NULL, 1); 
+	// info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
+	// 	d, e, NULL, 1, NULL, 1, NULL, 1); 
+	info = LAPACKE_dbdsdc(LAPACK_COL_MAJOR, 'U', 'N', minmn, d, e, 
+		NULL, 1, NULL, 1, NULL, NULL);
 
 	if( info > 0 ) {
 		printf( "The algorithm computing SVD failed to converge.\n" );
@@ -115,8 +117,10 @@ int main(int argc, char *argv[]) {
 	{
 		memcpy(d, d_original, minmn * sizeof(double));
 		memcpy(e, e_original, (minmn - 1) * sizeof(double));
-		info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
-			d, e, NULL, 1, NULL, 1, NULL, 1); 
+		// info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
+		// 	d, e, NULL, 1, NULL, 1, NULL, 1); 
+		info = LAPACKE_dbdsdc(LAPACK_COL_MAJOR, 'U', 'N', minmn, d, e, 
+			NULL, 1, NULL, 1, NULL, NULL);
 	}
 
 	for(int i = 0; i < NUM_REPEAT; ++i)
@@ -124,8 +128,10 @@ int main(int argc, char *argv[]) {
 		start = clock();
 		memcpy(d, d_original, minmn * sizeof(double));
 		memcpy(e, e_original, (minmn - 1) * sizeof(double));
-		info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
-			d, e, NULL, 1, NULL, 1, NULL, 1); 
+		// info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
+		// 	d, e, NULL, 1, NULL, 1, NULL, 1); 
+		info = LAPACKE_dbdsdc(LAPACK_COL_MAJOR, 'U', 'N', minmn, d, e, 
+			NULL, 1, NULL, 1, NULL, NULL);
 		end = clock();
 		sqr_cpu_time_used += ((double) (end - start)) / CLOCKS_PER_SEC;
 	}
@@ -135,7 +141,7 @@ int main(int argc, char *argv[]) {
 		exit( 1 );
 	}
 
-	printf("LAPACKE GEBRD SQR (Double) Latency: %lf ms\n", 1000 * sqr_cpu_time_used / NUM_REPEAT);
+	printf("LAPACKE GEBRD DC (Double) Latency: %lf ms\n", 1000 * sqr_cpu_time_used / NUM_REPEAT);
 
 	// print_matrix( "Diagonal values", 1, minmn, d, 1 );
 
