@@ -98,7 +98,7 @@ int main(int argc, char *argv[]) {
     const int ldu = m;  // ldu >= m
     const int ldvt = n; // ldvt >= n if jobu = 'A'
 
-    std::vector<double> A(m * n, 0);
+    std::vector<float> A(m * n, 0);
 
     std::default_random_engine eng(0U);
     // std::uniform_int_distribution<int> dis(0, 5);
@@ -106,21 +106,21 @@ int main(int argc, char *argv[]) {
     auto const rand = [&dis, &eng]() { return dis(eng); };
     std::generate(A.begin(), A.end(), rand);
 
-    std::vector<double> U(ldu * m, 0);  /* m-by-m unitary matrix, left singular vectors  */
-    std::vector<double> VT(ldvt * n, 0); /* n-by-n unitary matrix, right singular vectors */
-    std::vector<double> S(n, 0);        /* numerical singular value */
+    std::vector<float> U(ldu * m, 0);  /* m-by-m unitary matrix, left singular vectors  */
+    std::vector<float> VT(ldvt * n, 0); /* n-by-n unitary matrix, right singular vectors */
+    std::vector<float> S(n, 0);        /* numerical singular value */
     int info_gpu = 0;                                  /* host copy of error info */
 
-    double *d_A = nullptr;
-    double *d_S = nullptr;  /* singular values */
-    double *d_U = nullptr;  /* left singular vectors */
-    double *d_VT = nullptr; /* right singular vectors */
+    float *d_A = nullptr;
+    float *d_S = nullptr;  /* singular values */
+    float *d_U = nullptr;  /* left singular vectors */
+    float *d_VT = nullptr; /* right singular vectors */
 
     int *devInfo = nullptr;
 
     int lwork = 0; /* size of workspace */
-    double *d_work = nullptr;
-    double *d_rwork = nullptr;
+    float *d_work = nullptr;
+    float *d_rwork = nullptr;
 
     // std::printf("A = (matlab base-1)\n");
     // print_matrix(m, n, A.data(), lda);
@@ -135,59 +135,59 @@ int main(int argc, char *argv[]) {
     CUBLAS_CHECK(cublasSetStream(cublasH, stream));
 
     /* step 2: copy A to device */
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(double) * A.size()));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_S), sizeof(double) * S.size()));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_U), sizeof(double) * U.size()));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_VT), sizeof(double) * VT.size()));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(float) * A.size()));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_S), sizeof(float) * S.size()));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_U), sizeof(float) * U.size()));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_VT), sizeof(float) * VT.size()));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&devInfo), sizeof(int)));
 
-    CUDA_CHECK(
-        cudaMemcpyAsync(d_A, A.data(), sizeof(double) * A.size(), cudaMemcpyHostToDevice, stream));
-
     /* step 3: query working space of SVD */
-    CUSOLVER_CHECK(cusolverDnDgesvd_bufferSize(cusolverH, m, n, &lwork));
+    CUSOLVER_CHECK(cusolverDnSgesvd_bufferSize(cusolverH, m, n, &lwork));
 
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work), sizeof(double) * lwork));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work), sizeof(float) * lwork));
 
     /* step 4: compute SVD */
-    signed char jobu = 'A';  // all m columns of U
-    signed char jobvt = 'A'; // all n rows of VT
+    signed char jobu = 'N';
+    signed char jobvt = 'N';
 
     cudaEvent_t start, stop;
-    float time;
+    float time = 0, temp_time = 0;
 
     CUDA_CHECK(cudaEventCreate(&start));
     CUDA_CHECK(cudaEventCreate(&stop));
     for(int i{0}; i < NUM_WARPUP; ++i)
     {
-        CUSOLVER_CHECK(cusolverDnDgesvd(cusolverH, jobu, jobvt, m, n, d_A, lda,
+        CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(float) * A.size(), cudaMemcpyHostToDevice));
+        CUSOLVER_CHECK(cusolverDnSgesvd(cusolverH, jobu, jobvt, m, n, d_A, lda,
                                         d_S, d_U, ldu, d_VT, ldvt,
                                         d_work, lwork, d_rwork, devInfo));
     }
     CUDA_CHECK(cudaStreamSynchronize(stream));
-    CUDA_CHECK(cudaEventRecord(start, stream));
     for(int i{0}; i < NUM_REPEAT; ++i)
     {
-        CUSOLVER_CHECK(cusolverDnDgesvd(cusolverH, jobu, jobvt, m, n, d_A, lda,
+        CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(float) * A.size(), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaEventRecord(start, stream));
+        CUSOLVER_CHECK(cusolverDnSgesvd(cusolverH, jobu, jobvt, m, n, d_A, lda,
                                         d_S, d_U, ldu, d_VT, ldvt,
                                         d_work, lwork, d_rwork, devInfo));
+        CUDA_CHECK(cudaEventRecord(stop, stream));
+        CUDA_CHECK(cudaEventSynchronize(stop));
+        CUDA_CHECK_LAST_ERROR();
+        CUDA_CHECK(cudaEventElapsedTime(&temp_time, start, stop));
+        time += temp_time;
     }
-    CUDA_CHECK(cudaEventRecord(stop, stream));
-    CUDA_CHECK(cudaEventSynchronize(stop));
-    CUDA_CHECK_LAST_ERROR();
-    CUDA_CHECK(cudaEventElapsedTime(&time, start, stop));
     time /= NUM_REPEAT;
 
     CUDA_CHECK(
-        cudaMemcpyAsync(U.data(), d_U, sizeof(double) * U.size(), cudaMemcpyDeviceToHost, stream));
-    CUDA_CHECK(cudaMemcpyAsync(VT.data(), d_VT, sizeof(double) * VT.size(), cudaMemcpyDeviceToHost,
+        cudaMemcpyAsync(U.data(), d_U, sizeof(float) * U.size(), cudaMemcpyDeviceToHost, stream));
+    CUDA_CHECK(cudaMemcpyAsync(VT.data(), d_VT, sizeof(float) * VT.size(), cudaMemcpyDeviceToHost,
                                stream));
     CUDA_CHECK(
-        cudaMemcpyAsync(S.data(), d_S, sizeof(double) * S.size(), cudaMemcpyDeviceToHost, stream));
+        cudaMemcpyAsync(S.data(), d_S, sizeof(float) * S.size(), cudaMemcpyDeviceToHost, stream));
     CUDA_CHECK(cudaMemcpyAsync(&info_gpu, devInfo, sizeof(int), cudaMemcpyDeviceToHost, stream));
 
     CUDA_CHECK(
-        cudaMemcpyAsync(d_A, A.data(), sizeof(double) * A.size(), cudaMemcpyHostToDevice, stream));
+        cudaMemcpyAsync(d_A, A.data(), sizeof(float) * A.size(), cudaMemcpyHostToDevice, stream));
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
@@ -213,7 +213,7 @@ int main(int argc, char *argv[]) {
     // print_matrix(n, n, VT.data(), ldvt);
     // std::printf("=====\n");
 
-    std::cout << "Cusolver SVD (Double) Latency: " << time << " ms" << std::endl;
+    std::cout << "Cusolver SVD (float) Latency: " << time << " ms" << std::endl;
 
     /* free resources */
     CUDA_CHECK(cudaFree(d_A));

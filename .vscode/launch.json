@@ -6,7 +6,7 @@
             "type": "cppdbg",    
             "request": "launch",  
             "targetArchitecture": "x64",    
-            "program": "${workspaceFolder}/mkl_svd/lapacke_dgbbrd",
+            "program": "${workspaceFolder}/cusolver_svd/cusolver_gebrd_float",
             "args": ["8192", "8192", "32"],
             "stopAtEntry": false,    
             "cwd": "${workspaceRoot}",    

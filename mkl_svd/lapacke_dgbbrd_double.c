@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
 
 	// print_matrix( "Matrix ab", kl + ku + 1, n, ab, ldab );
 
-	info = LAPACKE_dgbbrd(LAPACK_COL_MAJOR, 'B', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
+	info = LAPACKE_dgbbrd(LAPACK_COL_MAJOR, 'N', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
 
 	/* Check for convergence */
 	if( info > 0 ) {
@@ -83,14 +83,14 @@ int main(int argc, char *argv[]) {
 	for(int i = 0; i < NUM_WARMUP; ++i)
 	{
 		memcpy(ab, ab_original, ldab * n * sizeof(double));
-		info = LAPACKE_dgbbrd(LAPACK_COL_MAJOR, 'B', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
+		info = LAPACKE_dgbbrd(LAPACK_COL_MAJOR, 'N', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
 	}
 
 	for(int i = 0; i < NUM_REPEAT; ++i)
 	{
 		memcpy(ab, ab_original, ldab * n * sizeof(double));
 		start = clock();
-		info = LAPACKE_dgbbrd(LAPACK_COL_MAJOR, 'B', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
+		info = LAPACKE_dgbbrd(LAPACK_COL_MAJOR, 'N', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
 		end = clock();
 		brd_cpu_time_used += ((double) (end - start)) / CLOCKS_PER_SEC;
 	}

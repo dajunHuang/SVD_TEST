@@ -1,7 +1,15 @@
 *.asm
 *.o
 
-cusolver_svd/cusolver_gesvd
+cusolver_svd/cusolver_gesvd_float
+cusolver_svd/cusolver_gesvd_double
+cusolver_svd/cusolver_gebrd_float
+cusolver_svd/cusolver_gebrd_double
 
 mkl_svd/lapacke_dgesvd
+mkl_svd/lapacke_dgebrd
 mkl_svd/lapacke_dgbbrd
+
+ozimmu/ozimmu_test_double
+
+tcgemm/tcgemm_FP162FP32_float
