@@ -35,6 +35,8 @@ void random_initialize_band_matrix(double* ab, int ku, int kl, size_t n)
 
 /* Main program */
 int main(int argc, char *argv[]) {
+	mkl_set_num_threads (12);
+
     MKL_INT m = 1024, n = 1024;
 	MKL_INT kl = 0, ku = 32;
 
