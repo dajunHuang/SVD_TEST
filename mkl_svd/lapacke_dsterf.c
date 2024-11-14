@@ -60,10 +60,7 @@ int main(int argc, char *argv[]) {
 	{
 		memcpy(d, d_original, minmn * sizeof(double));
 		memcpy(e, e_original, (minmn - 1) * sizeof(double));
-		// info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
-		// 	d, e, NULL, 1, NULL, 1, NULL, 1); 
-		info = LAPACKE_dbdsdc(LAPACK_COL_MAJOR, 'U', 'N', minmn, d, e, 
-			NULL, 1, NULL, 1, NULL, NULL);
+		info = LAPACKE_dsterf(minmn, d, e);
 	}
 
 	for(int i = 0; i < NUM_REPEAT; ++i)
@@ -71,10 +68,7 @@ int main(int argc, char *argv[]) {
 		memcpy(d, d_original, minmn * sizeof(double));
 		memcpy(e, e_original, (minmn - 1) * sizeof(double));
 		start = clock();
-		// info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
-		// 	d, e, NULL, 1, NULL, 1, NULL, 1); 
-		info = LAPACKE_dbdsdc(LAPACK_COL_MAJOR, 'U', 'N', minmn, d, e, 
-			NULL, 1, NULL, 1, NULL, NULL);
+		info = LAPACKE_dsterf(minmn, d, e);
 		end = clock();
 		sqr_cpu_time_used += ((double) (end - start)) / CLOCKS_PER_SEC;
 	}
@@ -84,7 +78,7 @@ int main(int argc, char *argv[]) {
 		exit( 1 );
 	}
 
-	printf("LAPACKE bidiagonal to diagonal (Double) Latency: %lf ms\n", 1000 * sqr_cpu_time_used / NUM_REPEAT);
+	printf("LAPACKE symmetric tridiagonal to diagonal (Double) Latency: %lf ms\n", 1000 * sqr_cpu_time_used / NUM_REPEAT);
 
 	// print_matrix( "Diagonal values", 1, minmn, d, 1 );
 
