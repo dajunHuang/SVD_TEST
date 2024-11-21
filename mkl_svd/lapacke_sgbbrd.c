@@ -8,7 +8,7 @@
 #define NUM_REPEAT 1
 
 /* Auxiliary routine: printing a matrix */
-void print_matrix( char* desc, MKL_INT m, MKL_INT n, double* a, MKL_INT lda )
+void print_matrix( char* desc, MKL_INT m, MKL_INT n, float* a, MKL_INT lda )
 {
 	MKL_INT i, j;
 	printf( "\n %s\n", desc );
@@ -18,7 +18,7 @@ void print_matrix( char* desc, MKL_INT m, MKL_INT n, double* a, MKL_INT lda )
 	}
 }
 
-void random_initialize_band_matrix(double* ab, int ku, int kl, size_t n)
+void random_initialize_band_matrix(float* ab, int ku, int kl, size_t n)
 {
 	int ldab = ku + kl + 1;
 	for (int j = 0; j < n; ++j)
@@ -27,7 +27,7 @@ void random_initialize_band_matrix(double* ab, int ku, int kl, size_t n)
 		{
 			if(i + j >= ku && i + j <= ku + n)
 			{
-				ab[i + j * ldab] = rand() / (double) RAND_MAX;
+				ab[i + j * ldab] = rand() / (float) RAND_MAX;
 			}
 		}
 	}
@@ -58,24 +58,24 @@ int main(int argc, char *argv[]) {
 	MKL_INT minmn = (m)>(n)?(n):(m);
 
 	/* Local arrays */
-	double *ab_original = malloc(ldab * n * sizeof(double));
-	double *ab = malloc(ldab * n * sizeof(double));
-	double *d_original = malloc(minmn * sizeof(double));
-	double *e_original = malloc((minmn - 1) * sizeof(double));
-	double *d = malloc(minmn * sizeof(double));
-	double *e = malloc((minmn - 1) * sizeof(double));
-	double *q = malloc(ldq * m * sizeof(double));
-	double *pt = malloc(ldq * n * sizeof(double));
+	float *ab_original = malloc(ldab * n * sizeof(float));
+	float *ab = malloc(ldab * n * sizeof(float));
+	float *d_original = malloc(minmn * sizeof(float));
+	float *e_original = malloc((minmn - 1) * sizeof(float));
+	float *d = malloc(minmn * sizeof(float));
+	float *e = malloc((minmn - 1) * sizeof(float));
+	float *q = malloc(ldq * m * sizeof(float));
+	float *pt = malloc(ldq * n * sizeof(float));
 
 
 	srand((unsigned int)time(NULL));
 	random_initialize_band_matrix(ab_original, ku, kl, n);
 
-	memcpy(ab, ab_original, ldab * n * sizeof(double));
+	memcpy(ab, ab_original, ldab * n * sizeof(float));
 
 	// print_matrix( "Matrix ab", kl + ku + 1, n, ab, ldab );
 
-	info = LAPACKE_dgbbrd(LAPACK_COL_MAJOR, 'N', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
+	info = LAPACKE_sgbbrd(LAPACK_COL_MAJOR, 'N', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
 
 	/* Check for convergence */
 	if( info > 0 ) {
@@ -85,17 +85,17 @@ int main(int argc, char *argv[]) {
 
 	for(int i = 0; i < NUM_WARMUP; ++i)
 	{
-		memcpy(ab, ab_original, ldab * n * sizeof(double));
-		info = LAPACKE_dgbbrd(LAPACK_COL_MAJOR, 'N', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
+		memcpy(ab, ab_original, ldab * n * sizeof(float));
+		info = LAPACKE_sgbbrd(LAPACK_COL_MAJOR, 'N', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
 	}
 
 	for(int i = 0; i < NUM_REPEAT; ++i)
 	{
-		memcpy(ab, ab_original, ldab * n * sizeof(double));
+		memcpy(ab, ab_original, ldab * n * sizeof(float));
 		start = clock();
-		info = LAPACKE_dgbbrd(LAPACK_COL_MAJOR, 'N', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
+		info = LAPACKE_sgbbrd(LAPACK_COL_MAJOR, 'N', m, n, 0, kl, ku, ab, ldab, d_original, e_original, q, ldq, pt, ldpt, NULL, 1);
 		end = clock();
-		brd_cpu_time_used += ((double) (end - start)) / CLOCKS_PER_SEC;
+		brd_cpu_time_used += ((float) (end - start)) / CLOCKS_PER_SEC;
 	}
 
 	/* Check for convergence */
@@ -104,12 +104,12 @@ int main(int argc, char *argv[]) {
 		exit( 1 );
 	}
 
-	printf("LAPACKE GBBRD (Double) Latency: %lf ms\n", 1000 * brd_cpu_time_used / NUM_REPEAT);
+	printf("LAPACKE GBBRD (Float) Latency: %lf ms\n", 1000 * brd_cpu_time_used / NUM_REPEAT);
 	// print_matrix( "Diagonal values", 1, minmn, d, 1 );
 	// print_matrix( "Off-Diagonal values", 1, minmn - 1, e, 1 );
 
-	// memcpy(d, d_original, minmn * sizeof(double));
-	// memcpy(e, e_original, (minmn - 1) * sizeof(double));
+	// memcpy(d, d_original, minmn * sizeof(float));
+	// memcpy(e, e_original, (minmn - 1) * sizeof(float));
 	// // info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
 	// // 	d, e, NULL, 1, NULL, 1, NULL, 1); 
 	// info = LAPACKE_dbdsdc(LAPACK_COL_MAJOR, 'U', 'N', minmn, d, e, 
@@ -122,8 +122,8 @@ int main(int argc, char *argv[]) {
 
 	// for(int i = 0; i < NUM_WARMUP; ++i)
 	// {
-	// 	memcpy(d, d_original, minmn * sizeof(double));
-	// 	memcpy(e, e_original, (minmn - 1) * sizeof(double));
+	// 	memcpy(d, d_original, minmn * sizeof(float));
+	// 	memcpy(e, e_original, (minmn - 1) * sizeof(float));
 	// 	// info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
 	// 	// 	d, e, NULL, 1, NULL, 1, NULL, 1); 
 	// 	info = LAPACKE_dbdsdc(LAPACK_COL_MAJOR, 'U', 'N', minmn, d, e, 
@@ -133,14 +133,14 @@ int main(int argc, char *argv[]) {
 	// for(int i = 0; i < NUM_REPEAT; ++i)
 	// {
 	// 	start = clock();
-	// 	memcpy(d, d_original, minmn * sizeof(double));
-	// 	memcpy(e, e_original, (minmn - 1) * sizeof(double));
+	// 	memcpy(d, d_original, minmn * sizeof(float));
+	// 	memcpy(e, e_original, (minmn - 1) * sizeof(float));
 	// 	// info = LAPACKE_dbdsqr(LAPACK_COL_MAJOR, 'U', minmn, 0, 0, 0, 
 	// 	// 	d, e, NULL, 1, NULL, 1, NULL, 1); 
 	// 	info = LAPACKE_dbdsdc(LAPACK_COL_MAJOR, 'U', 'N', minmn, d, e, 
 	// 		NULL, 1, NULL, 1, NULL, NULL);
 	// 	end = clock();
-	// 	sqr_cpu_time_used += ((double) (end - start)) / CLOCKS_PER_SEC;
+	// 	sqr_cpu_time_used += ((float) (end - start)) / CLOCKS_PER_SEC;
 	// }
 
 	// if( info > 0 ) {
@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
 	// 	exit( 1 );
 	// }
 
-	// printf("LAPACKE GBBRD SQR (Double) Latency: %lf ms\n", 1000 * sqr_cpu_time_used / NUM_REPEAT);
+	// printf("LAPACKE GBBRD SQR (float) Latency: %lf ms\n", 1000 * sqr_cpu_time_used / NUM_REPEAT);
 
 	exit( 0 );
 } /* End of LAPACKE_sgesvd Example */

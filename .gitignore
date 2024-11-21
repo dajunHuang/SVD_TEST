@@ -6,6 +6,12 @@ cusolver_svd/cusolver_gesvd_double
 cusolver_svd/cusolver_gebrd_float
 cusolver_svd/cusolver_gebrd_double
 
+magma/magma_tri
+
+mkl_svd/lapacke_dbdsdc
+mkl_svd/lapacke_dsterf
+mkl_svd/lapacke_sbdsdc
+mkl_svd/lapacke_ssterf
 mkl_svd/lapacke_dgesvd
 mkl_svd/lapacke_dgebrd
 mkl_svd/lapacke_dgbbrd
