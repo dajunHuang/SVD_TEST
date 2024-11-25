@@ -10,6 +10,18 @@ static __inline__ __device__ T warpAllReduceSum(T val) {
 }
 
 template <typename T, long M, long N>
+__global__ void my_hou_kernel_new(long m, long n, T *A, long lda, T *work,
+                                  long ldwork, T *R, long ldr) {
+    while(m >= M)
+    {
+        long mm = min(m - blockIdx.x * M, M);
+        long blockNum = (m + M - 1) / M;
+        long ldwork = blockNum * n;
+
+    }
+}
+
+template <typename T, long M, long N>
 __global__ void my_hou_kernel(long m, long n, T *A, long lda, T *R, long ldr) {
     // 1.求出本block处理的矩阵的尺寸
     long mm = min(m - blockIdx.x * M, M);
@@ -235,5 +247,9 @@ __global__ void my_hou_kernel(long m, long n, T *A, long lda, T *R, long ldr) {
     }
 }
 
-template __global__ void my_hou_kernel<float, 128, 32>(long m, long n, float *A, long lda, float *R, long ldr);
-template __global__ void my_hou_kernel<double, 128, 32>(long m, long n, double *A, long lda, double *R, long ldr);
+template __global__ void my_hou_kernel<float, 128, 32>(long m, long n, float *A,
+                                                       long lda, float *R,
+                                                       long ldr);
+template __global__ void my_hou_kernel<double, 128, 32>(long m, long n,
+                                                        double *A, long lda,
+                                                        double *R, long ldr);

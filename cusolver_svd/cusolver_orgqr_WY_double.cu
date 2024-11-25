@@ -26,28 +26,6 @@ void init_identity_matrix(std::vector<double> &A, size_t m, size_t n,
     }
 }
 
-void getW(cublasHandle_t &cublasH, size_t m, size_t n, double *d_A,
-          const int lda, double *d_Q, const int ldq, std::vector<double> &TAU,
-          const int minmn, double *d_P, const int ldp) {
-    for (int i = 0; i < minmn; i++) {
-        double beta = TAU[i];
-        double neg_beta = -beta;
-        double one = 1;
-        double zero = 1;
-        // P = I - \beta v vT
-        launchKernel_Identity({(m + 31) / 32, (m + 31) / 32, 1}, {32, 32, 1}, m,
-                              n, d_P, ldp);
-        CUBLAS_CHECK(cublasDsyr(cublasH, CUBLAS_FILL_MODE_UPPER, m, &neg_beta,
-                                d_A + i * lda, 1, d_P, ldp));
-        // z = \beta Q v, W = W | z
-        CUBLAS_CHECK(cublasDgemv(cublasH, CUBLAS_OP_N, m, m, &beta, d_Q, ldq,
-                                 d_A + i * lda, 1, &zero, d_A + i * lda, 1));
-        // Q = QP
-        CUBLAS_CHECK(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, m, m, m,
-                                 &one, d_Q, ldq, d_P, ldp, &zero, d_Q, ldq));
-    }
-}
-
 int main(int argc, char *argv[]) {
     cusolverDnHandle_t cusolverH = NULL;
     cublasHandle_t cublasH = NULL;
@@ -65,8 +43,8 @@ int main(int argc, char *argv[]) {
     const int ldy = m;
     const int ldr = n;
     const int ldq = m;
-    const int ldworkw = m;
     int lwork = 0; /* size of workspace */
+    int ldworkw = 0;
 
     std::vector<double> A(m * n, 0);
     std::vector<double> Q(m * m, 0);
@@ -83,6 +61,7 @@ int main(int argc, char *argv[]) {
     init_identity_matrix(Q, m, m, ldq);
 
     int info_gpu = 0; /* host copy of error info */
+    int info_gpu1 = 0; /* host copy of error info */
 
     double *d_A = nullptr;
     double *d_Q = nullptr;
@@ -92,9 +71,7 @@ int main(int argc, char *argv[]) {
     double *d_work = nullptr;
     double *d_work_w = nullptr;
     int *devInfo = nullptr;
-
-    dim3 gridDim((m + 31) / 32, (n + 31) / 32);
-    dim3 blockDim(32, 32);
+    int *devInfo1 = nullptr;
 
     /* step 1: create cusolver handle, bind a stream */
     CUSOLVER_CHECK(cusolverDnCreate(&cusolverH));
@@ -113,11 +90,10 @@ int main(int argc, char *argv[]) {
         cudaMalloc(reinterpret_cast<void **>(&d_Y), sizeof(double) * m * n));
     CUDA_CHECK(
         cudaMalloc(reinterpret_cast<void **>(&d_R), sizeof(double) * n * n));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work_w),
-                          sizeof(double) * m * m));
     CUDA_CHECK(
         cudaMalloc(reinterpret_cast<void **>(&d_TAU), sizeof(double) * minmn));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&devInfo), sizeof(int)));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&devInfo1), sizeof(int)));
     CUDA_CHECK(cudaMemcpyAsync(d_A, A.data(), sizeof(double) * A.size(),
                                cudaMemcpyHostToDevice, stream));
 
@@ -126,6 +102,10 @@ int main(int argc, char *argv[]) {
         cusolverDnDgeqrf_bufferSize(cusolverH, m, n, d_A, lda, &lwork));
     CUDA_CHECK(
         cudaMalloc(reinterpret_cast<void **>(&d_work), sizeof(double) * lwork));
+    CUSOLVER_CHECK(
+        cusolverDnDorgqr_bufferSize(cusolverH, m, n, n, d_A, lda, d_TAU, &ldworkw));
+    CUDA_CHECK(
+        cudaMalloc(reinterpret_cast<void **>(&d_work_w), sizeof(double) * ldworkw));
 
     CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(double) * A.size(),
                           cudaMemcpyHostToDevice));
@@ -137,11 +117,9 @@ int main(int argc, char *argv[]) {
                        d_A, lda, d_R, ldr);
     launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
                            d_A, lda, d_Y, ldy);
-    CUDA_CHECK(cudaMemcpy(TUA_from_gpu.data(), d_TAU, minmn * sizeof(double),
-                          cudaMemcpyDeviceToHost));
-    getW(cublasH, m, n, d_A, lda, d_Q, ldq, TUA_from_gpu, minmn, d_work_w,
-         ldworkw);
-
+    CUSOLVER_CHECK(cusolverDnDorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
+                                    ldworkw, devInfo));
+                                
     cudaEvent_t start, stop;
     float time = 0, temp_time = 0;
 
@@ -159,10 +137,8 @@ int main(int argc, char *argv[]) {
                         d_A, lda, d_R, ldr);
         launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
                             d_A, lda, d_Y, ldy);
-        CUDA_CHECK(cudaMemcpy(TUA_from_gpu.data(), d_TAU, minmn * sizeof(double),
-                            cudaMemcpyDeviceToHost));
-        getW(cublasH, m, n, d_A, lda, d_Q, ldq, TUA_from_gpu, minmn, d_work_w,
-            ldworkw);
+        CUSOLVER_CHECK(cusolverDnDorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
+                                        ldworkw, devInfo1));
     }
     CUDA_CHECK(cudaStreamSynchronize(stream));
     for(int i{0}; i < NUM_REPEAT; ++i)
@@ -178,11 +154,9 @@ int main(int argc, char *argv[]) {
         launchKernel_moveU({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
                         d_A, lda, d_R, ldr);
         launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
-                            d_A, lda, d_Y, ldy);
-        CUDA_CHECK(cudaMemcpy(TUA_from_gpu.data(), d_TAU, minmn * sizeof(double),
-                            cudaMemcpyDeviceToHost));
-        getW(cublasH, m, n, d_A, lda, d_Q, ldq, TUA_from_gpu, minmn, d_work_w,
-            ldworkw);
+                            d_A, lda, d_Y, ldy);                                       
+        CUSOLVER_CHECK(cusolverDnDorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
+                                        ldworkw, devInfo1));
 
         CUDA_CHECK(cudaEventRecord(stop, stream));
         CUDA_CHECK(cudaEventSynchronize(stop));
@@ -194,21 +168,34 @@ int main(int argc, char *argv[]) {
 
     CUDA_CHECK(cudaMemcpyAsync(&info_gpu, devInfo, sizeof(int),
                                cudaMemcpyDeviceToHost, stream));
+    CUDA_CHECK(cudaMemcpyAsync(&info_gpu1, devInfo1, sizeof(int),
+                               cudaMemcpyDeviceToHost, stream));
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
-    // std::printf("after gesvd: info_gpu = %d\n", info_gpu);
+    // std::printf("after geqrf: info_gpu = %d\n", info_gpu);
     // if (0 == info_gpu) {
-    //     std::printf("gesvd converges \n");
+    //     std::printf("geqrf converges \n");
     // } else if (0 > info_gpu) {
     //     std::printf("%d-th parameter is wrong \n", -info_gpu);
     //     exit(1);
     // } else {
-    //     std::printf("WARNING: info = %d : gesvd does not converge \n",
+    //     std::printf("WARNING: info = %d : geqrf does not converge \n",
     //     info_gpu);
     // }
 
-    std::cout << "Cusolver QRF (double) Latency: " << time << " ms"
+    // std::printf("after orgqr: info_gpu1 = %d\n", info_gpu1);
+    // if (0 == info_gpu1) {
+    //     std::printf("orgqr converges \n");
+    // } else if (0 > info_gpu1) {
+    //     std::printf("%d-th parameter is wrong \n", -info_gpu1);
+    //     exit(1);
+    // } else {
+    //     std::printf("WARNING: info = %d : orgqr does not converge \n",
+    //     info_gpu1);
+    // }
+
+    std::cout << "Cusolver QRF + ORGQR (double) Latency: " << time << " ms"
               << std::endl;
 
     /* free resources */
@@ -219,7 +206,7 @@ int main(int argc, char *argv[]) {
     CUDA_CHECK(cudaFree(d_TAU));
     CUDA_CHECK(cudaFree(devInfo));
     CUDA_CHECK(cudaFree(d_work));
-     CUDA_CHECK(cudaFree(d_work_w));
+    CUDA_CHECK(cudaFree(d_work_w));
 
     CUSOLVER_CHECK(cusolverDnDestroy(cusolverH));
     CUBLAS_CHECK(cublasDestroy(cublasH));

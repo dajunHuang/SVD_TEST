@@ -237,3 +237,5 @@ __global__ void my_hou_kernel(long m, long n, T *A, long lda, T *R, long ldr) {
 
 template __global__ void my_hou_kernel<float, 128, 32>(long m, long n, float *A, long lda, float *R, long ldr);
 template __global__ void my_hou_kernel<double, 128, 32>(long m, long n, double *A, long lda, double *R, long ldr);
+template __global__ void my_hou_kernel<float, 512, 32>(long m, long n, float *A, long lda, float *R, long ldr);
+template __global__ void my_hou_kernel<double, 512, 32>(long m, long n, double *A, long lda, double *R, long ldr);
