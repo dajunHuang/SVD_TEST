@@ -14,14 +14,14 @@
 #define NUM_REPEAT 5
 
 template <typename T>
-void test_hou_tsqr_panel(size_t m, size_t n) {
+void test_hou_tsqr_panel(int m, int n) {
     // cusolverDnHandle_t cusolverH = NULL;
     cublasHandle_t cublasH = NULL;
     cudaStream_t stream = NULL;
 
-    const size_t lda = m;
-    const size_t ldr = n;
-    const size_t ldy = m;
+    const int lda = m;
+    const int ldr = n;
+    const int ldy = m;
 
     std::vector<T> A(m * n, 0);
     std::vector<T> A_from_gpu(m * n, 0);
@@ -52,8 +52,8 @@ void test_hou_tsqr_panel(size_t m, size_t n) {
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_Y), sizeof(T) * m * n));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_R), sizeof(T) * n * n));
 
-    const unsigned int blockNum = (m + 128U - 1U) / 128U;
-    const size_t ldwork{32U * blockNum};
+    const int blockNum = (m + 128 - 1) / 128;
+    const int ldwork{32 * blockNum};
 
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work),
                           sizeof(T) * ldwork * 32));
@@ -120,11 +120,11 @@ void test_hou_tsqr_panel(size_t m, size_t n) {
     CUDA_CHECK(cudaDeviceReset());
 }
 
-template void test_hou_tsqr_panel<float>(size_t m, size_t n);
-template void test_hou_tsqr_panel<double>(size_t m, size_t n);
+template void test_hou_tsqr_panel<float>(int m, int n);
+// template void test_hou_tsqr_panel<double>(int m, int n);
 
 int main(int argc, char *argv[]) {
-    size_t m = 32768, n = 32;
+    int m = 512, n = 32;
     int dataType = 1;
 
     print_device_info();

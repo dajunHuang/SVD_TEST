@@ -16,17 +16,16 @@ static __inline__ __device__ T warpAllReduceSum(T val) {
 template <typename T>
 __device__ void householder_QR(const size_t m, const size_t n, T *A,
                                const size_t lda, T *R, const size_t ldr, T *RR,
-                               const unsigned int threadIdx_x,
+                               T *acc, T *q, const unsigned int threadIdx_x,
                                const unsigned int threadIdx_y,
                                const unsigned int blockDim_x) {
     size_t rowDataNum{(m + blockDim_x - 1) / blockDim_x};
     const size_t op_col{threadIdx_y};
     // T acc[rowDataNum] = {0};
-    T acc[4] = {0};
     T nu = 0;
 
-     for (size_t col{0}; col < n; col++) {
-         nu = 0;
+    for (size_t col{0}; col < n; col++) {
+        nu = 0;
         if (col == threadIdx_y) {
             for (size_t i{0}; i < rowDataNum; ++i) {
                 acc[i] = 0;
@@ -92,7 +91,7 @@ __device__ void householder_QR(const size_t m, const size_t n, T *A,
 
             __syncwarp();
         }
-     }
+    }
 
     __syncthreads();
 
@@ -104,8 +103,6 @@ __device__ void householder_QR(const size_t m, const size_t n, T *A,
         R[threadIdx_x + threadIdx_y * ldr] = RR[threadIdx_y];
     }
 
-    // T q[rowDataNum] = {0};
-    T q[4] = {0};
     for (size_t i{0}; i < rowDataNum; ++i) {
         size_t idx_x{threadIdx_x + i * blockDim_x};
         if (idx_x == op_col) {
@@ -150,10 +147,13 @@ __device__ void householder_QR(const size_t m, const size_t n, T *A,
     }
 }
 
-template __device__ void householder_QR<float>(
-    const size_t m, const size_t n, float *A, const size_t lda, float *R,
-    const size_t ldr, float *RR, const unsigned int threadIdx_x,
-    const unsigned int threadIdx_y, const unsigned int blockDim_x);
+template __device__ void householder_QR<float>(const size_t m, const size_t n,
+                                               float *A, const size_t lda,
+                                               float *R, const size_t ldr,
+                                               float *RR, float *acc, float *q,
+                                               const unsigned int threadIdx_x,
+                                               const unsigned int threadIdx_y,
+                                               const unsigned int blockDim_x);
 // template __device__ void householder_QR<double>(
 //     const size_t m, const size_t n, double *A, const size_t lda, double *R,
 //     const size_t ldr, double *RR, const unsigned int threadIdx_x,
@@ -169,6 +169,10 @@ __global__ void QR_kernel(const size_t m, const size_t n, const T *A,
     __shared__ T shared_RR[N];
     __shared__ int shared_work_height[4];
     __shared__ int idx;
+    // T acc[rowDataNum] = {0};
+    T acc[4] = {0};
+    // T q[rowDataNum] = {0};
+    T q[4] = {0};
 
     const unsigned int blockIdx_x{blockIdx.x};
     const unsigned int threadIdx_x{threadIdx.x};
@@ -201,7 +205,8 @@ __global__ void QR_kernel(const size_t m, const size_t n, const T *A,
     //         mm, n, ldsa, ldwork, threadIdx_x, threadIdx_y, blockDim_x);
     // }
     householder_QR<T>(mm, n, A_in_share, ldsa, &work[blockIdx_x * N], ldwork,
-                      &shared_RR[0], threadIdx_x, threadIdx_y, blockDim_x);
+                      &shared_RR[0], &acc[0], &q[0], threadIdx_x, threadIdx_y,
+                      blockDim_x);
 
     int work_height = ((m + M - 1) / M) * N;
     if (threadIdx_x == 0 && threadIdx_y == 0) {
@@ -238,8 +243,8 @@ __global__ void QR_kernel(const size_t m, const size_t n, const T *A,
             //         ldsa, ldwork, threadIdx_x, threadIdx_y, blockDim_x);
             // }
             // householder_QR<T>(mm, n, A_in_share, ldsa, work + blockIdx_x * N,
-            //                   ldwork, shared_RR, threadIdx_x, threadIdx_y,
-            //                   blockDim_x);
+            //                   ldwork, &shared_RR[0], &acc[0], &q[0],
+            //                   threadIdx_x, threadIdx_y, blockDim_x);
         }
 
         work_height = ((work_height + M - 1) / M) * N;
