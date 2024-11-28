@@ -54,6 +54,7 @@ void test_hou_tsqr_panel(long m, long n)
 
     cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
     hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
+    CUDA_CHECK_LAST_ERROR();
 
     // cudaEvent_t start, stop;
     // float time = 0, temp_time = 0;

@@ -90,10 +90,3 @@ template void hou_tsqr_panel<double, 128, 32>(cublasHandle_t cublas_handle,
                                               long m, long n, double *A,
                                               long lda, double *R, long ldr,
                                               double *work);
-template void hou_tsqr_panel<float, 512, 32>(cublasHandle_t cublas_handle,
-                                             long m, long n, float *A, long lda,
-                                             float *R, long ldr, float *work);
-template void hou_tsqr_panel<double, 512, 32>(cublasHandle_t cublas_handle,
-                                              long m, long n, double *A,
-                                              long lda, double *R, long ldr,
-                                              double *work);

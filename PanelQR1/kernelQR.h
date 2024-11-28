@@ -1,4 +1,8 @@
+#include <cooperative_groups.h>
 #include <cuda_fp16.h>
+
+#include "cusolver_utils.h"
+namespace cg = cooperative_groups;
 
 #pragma once
 template <typename T>
@@ -9,20 +13,10 @@ static __inline__ __device__ T warpAllReduceSum(T val) {
     return val;
 }
 
-template <typename T, long M, long N>
-__global__ void my_hou_kernel_new(long m, long n, T *A, long lda, T *work,
-                                  long ldwork, T *R, long ldr) {
-    while(m >= M)
-    {
-        long mm = min(m - blockIdx.x * M, M);
-        long blockNum = (m + M - 1) / M;
-        long ldwork = blockNum * n;
-
-    }
-}
-
-template <typename T, long M, long N>
-__global__ void my_hou_kernel(long m, long n, T *A, long lda, T *R, long ldr) {
+template <typename T, size_t M, size_t N>
+__global__ void my_hou_kernel(const size_t m, const size_t n, T *A,
+                          const size_t lda, T *Y, const size_t ldy, T *R,
+                          const size_t ldr, T *work, const size_t ldwork) {
     // 1.求出本block处理的矩阵的尺寸
     long mm = min(m - blockIdx.x * M, M);
 
@@ -247,9 +241,7 @@ __global__ void my_hou_kernel(long m, long n, T *A, long lda, T *R, long ldr) {
     }
 }
 
-template __global__ void my_hou_kernel<float, 128, 32>(long m, long n, float *A,
-                                                       long lda, float *R,
-                                                       long ldr);
-template __global__ void my_hou_kernel<double, 128, 32>(long m, long n,
-                                                        double *A, long lda,
-                                                        double *R, long ldr);
+template __global__ void my_hou_kernel<float, 128, 32>(
+    const size_t m, const size_t n, float *A, const size_t lda, float *Y,
+    const size_t ldy, float *R, const size_t ldr, float *work,
+    const size_t ldwork);
