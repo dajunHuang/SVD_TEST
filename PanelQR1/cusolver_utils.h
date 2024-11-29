@@ -213,8 +213,7 @@ struct traits<cuDoubleComplex> {
     }
 };
 
-void print_device_info()
-{
+void print_device_info() {
     int device_id{0};
     cudaGetDevice(&device_id);
     cudaDeviceProp device_prop;
@@ -227,6 +226,18 @@ void print_device_info()
         static_cast<float>(2.0f * device_prop.memoryClockRate *
                            (device_prop.memoryBusWidth / 8) / 1.0e6)};
     std::cout << "Peak Bandwitdh: " << peak_bandwidth << " GB/s" << std::endl;
+    std::cout << "reservedSharedMemPerBlock: "
+              << (device_prop.reservedSharedMemPerBlock >> 10) << " KB "
+              << device_prop.reservedSharedMemPerBlock << " B" << std::endl;
+    std::cout << "sharedMemPerBlock: " << (device_prop.sharedMemPerBlock >> 10)
+              << " KB " << device_prop.sharedMemPerBlock << " B" <<
+        std::endl;
+    std::cout << "sharedMemPerBlockOptin: "
+              << (device_prop.sharedMemPerBlockOptin >> 10) << " KB "
+              << device_prop.sharedMemPerBlockOptin << " B" << std::endl;
+    std::cout << "sharedMemPerMultiprocessor: "
+              << (device_prop.sharedMemPerMultiprocessor >> 10) << " KB "
+              << device_prop.sharedMemPerMultiprocessor << " B" << std::endl;
     std::cout << std::endl;
 }
 

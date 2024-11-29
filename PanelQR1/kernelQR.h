@@ -14,45 +14,49 @@ static __inline__ __device__ T warpAllReduceSum(T val) {
 }
 
 template <typename T, int M, int N>
-__global__ void my_hou_kernel(const int m, const int n, T *A,
-                              const int lda, T *Y, const int ldy, T *R,
-                              const int ldr, T *work, const int ldwork) {
+__global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
+                              T *Y, const int ldy, T *R, const int ldr, T *work,
+                              const int ldwork) {
     // 创建shared memory，让整个block的线程能够进行数据共享
-    __shared__ T shared_A[M * N * 1], RR[N];
-    __shared__ int shared_work_height[2];
+    extern __shared__ T shared_A[];
+    __shared__ T RR[N];
+    __shared__ int shared_work_height[6];
     __shared__ int idx;
-    const int ldaa{M};
+    const int ldaa = M;
     T acc[4], q[4];
 
     // 2. 找到本线程的ID
-    const int i{static_cast<int>(threadIdx.x)};
-    const int j{static_cast<int>(threadIdx.y)};
-    const int blockIdx_x{static_cast<int>(blockIdx.x)};
-    const int blockDim_x{static_cast<int>(blockDim.x)};
-    const int blockDim_y{static_cast<int>(blockDim.y)};
+    const int i = static_cast<int>(threadIdx.x);
+    const int j = static_cast<int>(threadIdx.y);
+    const int blockIdx_x = static_cast<int>(blockIdx.x);
+    const int blockDim_x = static_cast<int>(blockDim.x);
+    const int blockDim_y = static_cast<int>(blockDim.y);
 
     if (i == 0 && j == 0) {
         idx = 0;
         shared_work_height[0] = static_cast<int>(m);
+        if (blockIdx_x == 0) {
+            printf("shared_work_height[%d] = %d\n", idx, static_cast<int>(m));
+        }
     }
 
     __syncthreads();
-    int nn{static_cast<int>(n)};
+    int nn = static_cast<int>(n);
 
     while (shared_work_height[idx] > M) {
-        int work_height{shared_work_height[idx]};
-        int mm{min(work_height - static_cast<int>(blockIdx_x * M),
-                   static_cast<int>(M))};
+        int work_height = shared_work_height[idx];
+        int mm = min(work_height - static_cast<int>(blockIdx_x * M),
+                     static_cast<int>(M));
 
         if (mm > 0) {
-            int rowDataNum{(mm + blockDim_x - 1) / blockDim_x};
-            int colDataNum{(nn + blockDim_y - 1) / blockDim_y};
+            int rowDataNum = (mm + blockDim_x - 1) / blockDim_x;
+            int colDataNum = (nn + blockDim_y - 1) / blockDim_y;
 
             T *AA = &shared_A[idx * N * ldaa];
 
             if (idx == 0) {
                 // 假定n=N=32，每一个线程拷贝2列
-                for (long k = 0; k < rowDataNum; k++) {
+                for (int k = 0; k < rowDataNum; k++) {
                     if (i + k * blockDim_x < mm) {
                         AA[i + k * blockDim_x + j * ldaa] =
                             A[blockIdx_x * M + i + k * blockDim_x + j * lda];
@@ -63,7 +67,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A,
                 }
             } else {
                 // 假定n=N=32，每一个线程拷贝2列
-                for (long k = 0; k < rowDataNum; k++) {
+                for (int k = 0; k < rowDataNum; k++) {
                     if (i + k * blockDim_x < mm) {
                         AA[i + k * blockDim_x + j * ldaa] =
                             work[blockIdx_x * M + i + k * blockDim_x +
@@ -110,26 +114,24 @@ __global__ void my_hou_kernel(const int m, const int n, T *A,
                     for (int k = 0; k < rowDataNum; k++) {
                         if (i + k * blockDim_x < mm &&
                             i + k * blockDim_x >= cols) {
-                            // AA[i + k * blockDim_x + cols * ldaa] *= scale;
-                            if(blockIdx_x == 0 && i == 0 && j == 0)
-                            {
-                                printf("AA[%d][%d] ldaa: %d %d %d %d %d\n", i + k * blockDim_x, cols, ldaa, i + k * blockDim_x + cols * ldaa, idx * N * ldaa, mm, nn);
-                            }
+                            AA[i + k * blockDim_x + cols * ldaa] *= scale;
+                            // if(blockIdx_x == 0 && i == 0 && j == 0)
+                            // {
+                            //     printf("AA[%d][%d] ldaa: %d %d %d %d %d
+                            //     %d\n", i + k * blockDim_x, cols, ldaa, i + k
+                            //     * blockDim_x + cols * ldaa, idx * N * ldaa,
+                            //     mm, nn, cols);
+                            // }
                         }
                     }
-
-                    if(blockIdx_x == 0 && i == 0 && j == 0) {
-                        printf("\n");
-                    }
-
                     __syncwarp();
 
                     // 2、求u(1)= u(1)+sign(u(1)); 每列找一个线程来计算即可
                     if (0 == i) {
                         T u1 = AA[cols + cols * mm];
-                        // AA[cols + cols * ldaa] += (u1 >= 0) ? 1 : -1;
+                        AA[cols + cols * ldaa] += (u1 >= 0) ? 1 : -1;
                         // // 把normx存放到RR中，也就是对角线的元素
-                        // RR[cols] = (u1 >= 0) ? -norm_x : norm_x;
+                        RR[cols] = (u1 >= 0) ? -norm_x : norm_x;
                     }
 
                     __syncwarp();
@@ -140,7 +142,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A,
                     for (int k = 0; k < rowDataNum; k++) {
                         if (i + k * blockDim_x < mm &&
                             i + k * blockDim_x >= cols) {
-                            // AA[i + k * blockDim_x + cols * ldaa] *= scale;
+                            AA[i + k * blockDim_x + cols * ldaa] *= scale;
                         }
                     }
                 }
@@ -174,8 +176,8 @@ __global__ void my_hou_kernel(const int m, const int n, T *A,
                             // if条件中，前部部分是为了防止最后一个block中线程行越界；后半部分在计算HouseHolder向量是只计算对角线一下的元素
                             if (i + k * blockDim_x < mm &&
                                 i + k * blockDim_x >= cols) {
-                                // AA[i + k * blockDim_x + opCols * ldaa] -=
-                                //     utx * AA[i + k * blockDim_x + cols * ldaa];
+                                AA[i + k * blockDim_x + opCols * ldaa] -=
+                                    utx * AA[i + k * blockDim_x + cols * ldaa];
                             }
                         }
                         __syncwarp();
@@ -194,10 +196,10 @@ __global__ void my_hou_kernel(const int m, const int n, T *A,
 #pragma unroll
                 for (int k = 0; k < rRowDataNum; k++) {
                     if (i + k * blockDim_x < opCols) {
-                        // work[blockIdx_x * N + i + k * blockDim_x +
-                        //      opCols * ldwork] =
-                        //     AA[i + k * blockDim_x + opCols * ldaa];
-                        // AA[i + k * blockDim_x + opCols * ldaa] = 0.0;
+                        work[blockIdx_x * N + i + k * blockDim_x +
+                             opCols * ldwork] =
+                            AA[i + k * blockDim_x + opCols * ldaa];
+                        AA[i + k * blockDim_x + opCols * ldaa] = 0.0;
                     } else if (i + k * blockDim_x > opCols) {
                         work[blockIdx_x * N + i + k * blockDim_x +
                              opCols * ldwork] = 0.0;
@@ -248,8 +250,8 @@ __global__ void my_hou_kernel(const int m, const int n, T *A,
                         // 3.计算q-uu'q
                         for (int k = 0; k < rowDataNum; k++) {
                             if (i + k * blockDim_x < mm) {
-                                // q[k] -=
-                                //     utq * AA[i + k * blockDim_x + cols * ldaa];
+                                q[k] -=
+                                    utq * AA[i + k * blockDim_x + cols * ldaa];
                             }
                         }
 
@@ -258,9 +260,14 @@ __global__ void my_hou_kernel(const int m, const int n, T *A,
                 }
 
                 // 4.把计算出来的q拷贝到A中
-                for (long k = 0; k < rowDataNum; k++) {
+                for (int k = 0; k < rowDataNum; k++) {
                     if (i + k * blockDim_x < mm) {
-                        AA[i + k * blockDim_x + opCols * lda] = q[k];
+                        // if(blockIdx_x == 0 && i == 0 && j == 0) {
+                        //     printf("AA[%d][%d] ldaa: %d %d %d %d %d\n", i + k
+                        //     * blockDim_x, opCols, ldaa, i + k * blockDim_x +
+                        //     opCols * lda, mm, nn, opCols);
+                        // }
+                        AA[i + k * blockDim_x + opCols * ldaa] = q[k];
                     }
                 }
             }
@@ -270,15 +277,16 @@ __global__ void my_hou_kernel(const int m, const int n, T *A,
 
         if (i == 0 && j == 0) {
             work_height = ((work_height + M - 1) / M) * N;
-            // if (blockIdx_x == 0) {
-            //     printf("shared_work_height[%d] = %d\n", idx, work_height);
-            // }
             shared_work_height[++idx] = work_height;
+            if (blockIdx_x == 0) {
+                printf("shared_work_height[%d] = %d\n", idx, work_height);
+            }
         }
     }
+
+
 }
 
 template __global__ void my_hou_kernel<float, 128, 32>(
-    const int m, const int n, float *A, const int lda, float *Y,
-    const int ldy, float *R, const int ldr, float *work,
-    const int ldwork);
+    const int m, const int n, float *A, const int lda, float *Y, const int ldy,
+    float *R, const int ldr, float *work, const int ldwork);

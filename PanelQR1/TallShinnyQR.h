@@ -10,13 +10,18 @@
 // 注意M必须<=256,N必须<=32
 // 另外n必须<=N
 template <typename T, int M, int N>
-void hou_tsqr_panel(cublasHandle_t cublas_handle, int m, int n, T *A,
-                    int lda, T *Y, int ldy, T *R, int ldr, T *work,
-                    int lwork) {
+void hou_tsqr_panel(cublasHandle_t cublas_handle, int m, int n, T *A, int lda,
+                    T *Y, int ldy, T *R, int ldr, T *work, int lwork) {
     if (n > N) {
         std::cout << "hou_tsqr_panel QR the n must <= N" << std::endl;
         exit(1);
     }
+
+    int share_memory_size = 3 * M * N * sizeof(T);
+
+    CUDA_CHECK(cudaFuncSetAttribute(my_hou_kernel<T, M, N>,
+                                    cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                    share_memory_size));
 
     // 一个block最大为32x32，一个block中的thread可以使用共享内存进行通信，
     //  所以使用一个block处理一个最大为<M,N>的矩阵块，并对它进行QR分解
@@ -34,11 +39,10 @@ void hou_tsqr_panel(cublasHandle_t cublas_handle, int m, int n, T *A,
 
     // 2.2直接创建这么多个核函数进行QR分解,A中存放Q, work中存放R
     my_hou_kernel<T, M, N>
-        <<<blockNum, blockDim>>>(m, n, A, lda, Y, ldy, R, ldr, work, lwork);
+        <<<blockNum, blockDim, share_memory_size>>>(m, n, A, lda, Y, ldy, R, ldr, work, lwork);
 }
 
 template void hou_tsqr_panel<float, 128, 32>(cublasHandle_t cublas_handle,
-                                             int m, int n, float *A,
-                                             int lda, float *Y, int ldy,
-                                             float *R, int ldr, float *work,
-                                             int lwork);
+                                             int m, int n, float *A, int lda,
+                                             float *Y, int ldy, float *R,
+                                             int ldr, float *work, int lwork);

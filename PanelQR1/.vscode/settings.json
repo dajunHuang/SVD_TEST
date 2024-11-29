@@ -1,0 +1,9 @@
+{
+    "files.associations": {
+        "*.inc": "plaintext",
+        "*.scpp": "cuda-cpp",
+        "random": "cpp",
+        "limits": "cpp",
+        "algorithm": "cpp"
+    }
+}
