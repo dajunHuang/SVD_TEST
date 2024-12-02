@@ -10,8 +10,8 @@
 
 #include "TallShinnyQR.h"
 
-#define NUM_WARPUP 2
-#define NUM_REPEAT 5
+#define NUM_WARPUP 20
+#define NUM_REPEAT 50
 
 template <typename T>
 void test_hou_tsqr_panel(int m, int n) {
@@ -116,10 +116,10 @@ template void test_hou_tsqr_panel<float>(int m, int n);
 // template void test_hou_tsqr_panel<double>(int m, int n);
 
 int main(int argc, char *argv[]) {
-    int m = 2048 + 32, n = 32;
+    int m = 2048, n = 32;
     int dataType = 1;
 
-    print_device_info();
+    // print_device_info();
 
     if (argc >= 4) {
         m = atoi(argv[1]);

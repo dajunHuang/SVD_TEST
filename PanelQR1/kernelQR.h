@@ -19,11 +19,6 @@ __device__ void block_tcgemm(int mm, float *C, const int ldc, __half *A,
     __half *warp_A, *warp_B;
 
     if (warp_row_idx < mm / 16) {
-        // if(blockIdx.x == 0) {
-        //     if((threadIdx.x + threadIdx.y * blockDim.x) % 32 == 0)
-        //         printf("warp_row_idx = %d, warp_col_idx = %d\n",
-        //         warp_row_idx, warp_col_idx);
-        // }
         nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, 16, 16, 16, __half,
                                nvcuda::wmma::col_major>
             a_frags;
@@ -57,7 +52,9 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
     extern __shared__ T shared_A[];
     const int ldaa = M;
     __shared__ T RR[N];
-    __shared__ int shared_work_height[6]; // maximux size of m is 32 * (128 / 32) ^ 6 = 131,072
+    __shared__ int
+        shared_work_height[7];  // maximux size of m is 32 * ((128 / 32) ^ (7 -
+                                // 1)) = 131,072 , max reduction_time = 6
     __shared__ int idx;
     T acc[4], q[4];  // 128 / 32 = 4
     const int lda_half = M, ldb_half = N;
@@ -325,7 +322,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
     }
 
     if (i == 0 && j == 0) {
-        idx -= 2;
+        idx -= 1;
     }
 
     while (true) {
@@ -336,9 +333,6 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
         }
 
         int work_height = shared_work_height[idx];
-        // if (blockIdx_x == 0 && i == 0 && j == 0) {
-        //     printf("shared_work_height[%d] = %d\n", idx, work_height);
-        // }
         int mm = min(work_height - static_cast<int>(blockIdx_x * M),
                      static_cast<int>(M));
 
@@ -348,39 +342,54 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
             const int rowDataNumB = (N + blockDim_x - 1) / blockDim_x;
             const int colDataNumB = colDataNumA;
 
-            T *q_this = &shared_A[blockIdx_x * M + idx * N * ldaa];
-            T *q_next = &shared_A[blockIdx_x * N + (idx + 1) * N * ldaa];
+            T *work_q_next = &work[blockIdx_x * N];
+            T *q_this = &shared_A[idx * N * ldaa];
+            T *work_q_to = &work[blockIdx_x * M];
 
-            for (int row_load_idx = 0; row_load_idx < rowDataNumA;
-                 row_load_idx++) {
-                for (int col_load_idx = 0; col_load_idx < colDataNumA;
-                     col_load_idx++) {
-                    int row_idx = i + row_load_idx * blockDim_x;
-                    int col_idx = j + col_load_idx * blockDim_y;
-                    if (row_idx < mm) {
-                        shared_A_half[row_idx + col_idx * ldaa] =
-                            __float2half(q_this[row_idx + col_idx * ldaa]);
+            if (work_height > M) {
+                for (int row_load_idx = 0; row_load_idx < rowDataNumA;
+                     row_load_idx++) {
+                    for (int col_load_idx = 0; col_load_idx < colDataNumA;
+                         col_load_idx++) {
+                        int row_idx = i + row_load_idx * blockDim_x;
+                        int col_idx = j + col_load_idx * blockDim_y;
+                        if (row_idx < mm) {
+                            shared_A_half[row_idx + col_idx * lda_half] =
+                                __float2half(q_this[row_idx + col_idx * ldaa]);
+                        }
+                    }
+                }
+
+                for (int row_load_idx = 0; row_load_idx < rowDataNumB;
+                     row_load_idx++) {
+                    for (int col_load_idx = 0; col_load_idx < colDataNumB;
+                         col_load_idx++) {
+                        int row_idx = i + row_load_idx * blockDim_x;
+                        int col_idx = j + col_load_idx * blockDim_y;
+                        shared_B_half[row_idx + col_idx * ldb_half] =
+                            __float2half(
+                                work_q_next[row_idx + col_idx * ldwork]);
+                    }
+                }
+
+                __syncthreads();
+                block_tcgemm(mm, q_this, ldaa, shared_A_half, lda_half,
+                             shared_B_half, ldb_half, warp_liner_idx);
+            }
+            if (idx > 0) {
+                for (int row_load_idx = 0; row_load_idx < rowDataNumA;
+                     row_load_idx++) {
+                    for (int col_load_idx = 0; col_load_idx < colDataNumA;
+                         col_load_idx++) {
+                        int row_idx = i + row_load_idx * blockDim_x;
+                        int col_idx = j + col_load_idx * blockDim_y;
+                        if (row_idx < mm) {
+                            work_q_to[row_idx + col_idx * ldwork] =
+                                q_this[row_idx + col_idx * ldaa];
+                        }
                     }
                 }
             }
-
-            for (int row_load_idx = 0; row_load_idx < rowDataNumB;
-                 row_load_idx++) {
-                for (int col_load_idx = 0; col_load_idx < colDataNumB;
-                     col_load_idx++) {
-                    int row_idx = i + row_load_idx * blockDim_x;
-                    int col_idx = j + col_load_idx * blockDim_y;
-                    shared_B_half[row_idx + col_idx * ldaa] =
-                        __float2half(q_next[row_idx + col_idx * ldaa]);
-                }
-            }
-
-            __syncthreads();
-            // if(idx == 0)
-            block_tcgemm(mm, q_this, ldaa, shared_A_half, lda_half,
-                         shared_B_half, ldb_half, warp_liner_idx);
-            // if(i == 0 && j == 0)
-            //     printf("%d\n", blockIdx_x);
         }
 
         if (i == 0 && j == 0) {

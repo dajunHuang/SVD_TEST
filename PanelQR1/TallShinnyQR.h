@@ -17,9 +17,9 @@ void hou_tsqr_panel(cublasHandle_t cublas_handle, int m, int n, T *A, int lda,
         exit(1);
     }
 
-    int reduction_size = ceil(log(m / 32) / log(4));
-    printf("reduction_size: %d\n", reduction_size);
-    int share_memory_size = reduction_size * M * N * sizeof(T);
+    int reduction_time = ceil(log(m / 32) / log(4));
+    // printf("size %d, reduction_time: %d\n", m, reduction_time);
+    int share_memory_size = reduction_time * M * N * sizeof(T);
 
     CUDA_CHECK(cudaFuncSetAttribute(my_hou_kernel<T, M, N>,
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
@@ -43,7 +43,7 @@ void hou_tsqr_panel(cublasHandle_t cublas_handle, int m, int n, T *A, int lda,
     my_hou_kernel<T, M, N><<<blockNum, blockDim, share_memory_size>>>(
         m, n, A, lda, R, ldr, work, lwork);
 
-    // printDeviceMatrixV2(R, ldr, 32, 32);
+    printDeviceMatrixV2(R, ldr, 16, 16);
 }
 
 template void hou_tsqr_panel<float, 128, 32>(cublasHandle_t cublas_handle,

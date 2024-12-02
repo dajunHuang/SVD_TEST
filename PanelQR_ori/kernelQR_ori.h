@@ -2,7 +2,7 @@
 
 #pragma once
 template <typename T>
-static __inline__ __device__ T warpAllReduceSum(T val) {
+static __inline__ __device__ T warpAllReduceSum_ori(T val) {
     for (int mask = warpSize / 2; mask > 0; mask /= 2) {
         val += __shfl_xor_sync(0xffffffff, val, mask);
     }
@@ -10,7 +10,7 @@ static __inline__ __device__ T warpAllReduceSum(T val) {
 }
 
 template <typename T, long M, long N>
-__global__ void my_hou_kernel(long m, long n, T *A, long lda, T *R, long ldr) {
+__global__ void my_hou_kernel_ori(long m, long n, T *A, long lda, T *R, long ldr) {
     // 1.求出本block处理的矩阵的尺寸
     long mm = min(m - blockIdx.x * M, M);
 
@@ -79,7 +79,7 @@ __global__ void my_hou_kernel(long m, long n, T *A, long lda, T *R, long ldr) {
             }
 
             // 需要将1个lane中所有线程求出的norm_squre加到一起,同时进行同步
-            T norm_x_squre = warpAllReduceSum(nu);
+            T norm_x_squre = warpAllReduceSum_ori(nu);
             T norm_x = sqrt(norm_x_squre);
 
             // 1、求u=x/norm(x);
@@ -136,7 +136,7 @@ __global__ void my_hou_kernel(long m, long n, T *A, long lda, T *R, long ldr) {
                     }
                     nu += acc[k];
                 }
-                T utx = warpAllReduceSum(nu);
+                T utx = warpAllReduceSum_ori(nu);
 
                 // 计算x-uu'x
 #pragma unroll
@@ -213,7 +213,7 @@ __global__ void my_hou_kernel(long m, long n, T *A, long lda, T *R, long ldr) {
                     nu += acc[k];
                 }
 
-                T utq = warpAllReduceSum(nu);
+                T utq = warpAllReduceSum_ori(nu);
 
                 // 3.计算q-uu'q
                 for (long k = 0; k < rowDataNum; k++) {
@@ -235,5 +235,5 @@ __global__ void my_hou_kernel(long m, long n, T *A, long lda, T *R, long ldr) {
     }
 }
 
-template __global__ void my_hou_kernel<float, 128, 32>(long m, long n, float *A, long lda, float *R, long ldr);
-template __global__ void my_hou_kernel<double, 128, 32>(long m, long n, double *A, long lda, double *R, long ldr);
+template __global__ void my_hou_kernel_ori<float, 128, 32>(long m, long n, float *A, long lda, float *R, long ldr);
+template __global__ void my_hou_kernel_ori<double, 128, 32>(long m, long n, double *A, long lda, double *R, long ldr);

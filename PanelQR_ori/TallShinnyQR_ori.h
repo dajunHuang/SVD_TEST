@@ -4,13 +4,13 @@
 
 #include <iostream>
 
-#include "kernelQR.h"
+#include "kernelQR_ori.h"
 #include "myBase.h"
 
 // 注意M必须<=256,N必须<=32
 // 另外n必须<=N
 template <typename T, long M, long N>
-void hou_tsqr_panel(cublasHandle_t cublas_handle, long m, long n, T *A,
+void hou_tsqr_panel_ori(cublasHandle_t cublas_handle, long m, long n, T *A,
                     long lda, T *R, long ldr, T *work) {
     if (n > N) {
         std::cout << "hou_tsqr_panel QR the n must <= N" << std::endl;
@@ -25,7 +25,7 @@ void hou_tsqr_panel(cublasHandle_t cublas_handle, long m, long n, T *A,
     if (m <= M) {
         // 调用核函数进行QR分解
         // 分解后A矩阵中存放的是Q矩阵，R矩阵中存放的是R矩阵
-        my_hou_kernel<T, M, N><<<1, blockDim>>>(m, n, A, lda, R, ldr);
+        my_hou_kernel_ori<T, M, N><<<1, blockDim>>>(m, n, A, lda, R, ldr);
         CHECK(cudaGetLastError());
         cudaDeviceSynchronize();
         return;
@@ -57,10 +57,10 @@ void hou_tsqr_panel(cublasHandle_t cublas_handle, long m, long n, T *A,
     long ldwork = blockNum * n;
 
     // 2.2直接创建这么多个核函数进行QR分解,A中存放Q, work中存放R
-    my_hou_kernel<T, M, N><<<blockNum, blockDim>>>(m, n, A, lda, work, ldwork);
+    my_hou_kernel_ori<T, M, N><<<blockNum, blockDim>>>(m, n, A, lda, work, ldwork);
 
     // 2.3再对R进行QR分解,也就是对work进行递归调用此函数
-    hou_tsqr_panel<T, M, N>(cublas_handle, ldwork, n, work, ldwork, R, ldr,
+    hou_tsqr_panel_ori<T, M, N>(cublas_handle, ldwork, n, work, ldwork, R, ldr,
                             work + n * ldwork);
 
     // 3.求出最终的Q，存放到A中
@@ -83,10 +83,10 @@ void hou_tsqr_panel(cublasHandle_t cublas_handle, long m, long n, T *A,
     }
 }
 
-template void hou_tsqr_panel<float, 128, 32>(cublasHandle_t cublas_handle,
+template void hou_tsqr_panel_ori<float, 128, 32>(cublasHandle_t cublas_handle,
                                              long m, long n, float *A, long lda,
                                              float *R, long ldr, float *work);
-template void hou_tsqr_panel<double, 128, 32>(cublasHandle_t cublas_handle,
+template void hou_tsqr_panel_ori<double, 128, 32>(cublasHandle_t cublas_handle,
                                               long m, long n, double *A,
                                               long lda, double *R, long ldr,
                                               double *work);

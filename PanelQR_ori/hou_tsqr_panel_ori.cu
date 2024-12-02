@@ -5,17 +5,17 @@
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <cusolverDn.h>
-#include "TallShinnyQR.h"
+#include "TallShinnyQR_ori.h"
 #include "cusolver_utils.h"
 
 #include <algorithm>
 #include <iostream>
 
-#define NUM_WARPUP 2
-#define NUM_REPEAT 5
+#define NUM_WARPUP 20
+#define NUM_REPEAT 50
 
 template <typename T>
-void test_hou_tsqr_panel(long m, long n)
+void test_hou_tsqr_panel_ori(long m, long n)
 {
     // cusolverDnHandle_t cusolverH = NULL;
     cublasHandle_t cublasH = NULL;
@@ -53,7 +53,7 @@ void test_hou_tsqr_panel(long m, long n)
     CUDA_CHECK(cudaMemcpyAsync(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice, stream));
 
     cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
-    hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
+    hou_tsqr_panel_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
     CUDA_CHECK_LAST_ERROR();
 
     cudaEvent_t start, stop;
@@ -64,7 +64,7 @@ void test_hou_tsqr_panel(long m, long n)
     for(int i{0}; i < NUM_WARPUP; ++i)
     {
         cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
-        hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
+        hou_tsqr_panel_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
     }
     CUDA_CHECK(cudaStreamSynchronize(stream));
     for(int i{0}; i < NUM_REPEAT; ++i)
@@ -72,7 +72,7 @@ void test_hou_tsqr_panel(long m, long n)
         cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
         CUDA_CHECK(cudaEventRecord(start, stream));
 
-        hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
+        hou_tsqr_panel_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
 
         CUDA_CHECK(cudaEventRecord(stop, stream));
         CUDA_CHECK(cudaEventSynchronize(stop));
@@ -102,8 +102,8 @@ void test_hou_tsqr_panel(long m, long n)
     CUDA_CHECK(cudaDeviceReset());
 }
 
-template void test_hou_tsqr_panel<float>(long m, long n);
-template void test_hou_tsqr_panel<double>(long m, long n);
+template void test_hou_tsqr_panel_ori<float>(long m, long n);
+template void test_hou_tsqr_panel_ori<double>(long m, long n);
 
 int main(int argc, char *argv[]) {
     long m = 2048, n = 32, dataType = 1;
@@ -118,9 +118,9 @@ int main(int argc, char *argv[]) {
     if (0 == dataType) {
         // test_hou_tsqr_panel<half>(m, n);
     } else if (1 == dataType) {
-        test_hou_tsqr_panel<float>(m, n);
+        test_hou_tsqr_panel_ori<float>(m, n);
     } else if (2 == dataType) {
-        test_hou_tsqr_panel<double>(m, n);
+        test_hou_tsqr_panel_ori<double>(m, n);
     }
     
     return 0;
