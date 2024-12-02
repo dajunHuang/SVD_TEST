@@ -1,8 +1,6 @@
-#include <cooperative_groups.h>
-#include <cuda_fp16.h>
+#include <mma.h>
 
 #include "cusolver_utils.h"
-namespace cg = cooperative_groups;
 
 #pragma once
 template <typename T>
@@ -13,17 +11,56 @@ static __inline__ __device__ T warpAllReduceSum(T val) {
     return val;
 }
 
+__device__ void block_tcgemm(int mm, float *C, const int ldc, __half *A,
+                             const int lda, __half *B, const int ldb,
+                             int warp_liner_idx) {
+    const int warp_row_idx = warp_liner_idx % 8;
+    const int warp_col_idx = warp_liner_idx / 8;
+    __half *warp_A, *warp_B;
+
+    if (warp_row_idx < mm / 16) {
+        // if(blockIdx.x == 0) {
+        //     if((threadIdx.x + threadIdx.y * blockDim.x) % 32 == 0)
+        //         printf("warp_row_idx = %d, warp_col_idx = %d\n",
+        //         warp_row_idx, warp_col_idx);
+        // }
+        nvcuda::wmma::fragment<nvcuda::wmma::matrix_a, 16, 16, 16, __half,
+                               nvcuda::wmma::col_major>
+            a_frags;
+        nvcuda::wmma::fragment<nvcuda::wmma::matrix_b, 16, 16, 16, __half,
+                               nvcuda::wmma::col_major>
+            b_frags;
+        nvcuda::wmma::fragment<nvcuda::wmma::accumulator, 16, 16, 16, float>
+            c_frag;
+
+        nvcuda::wmma::fill_fragment(c_frag, static_cast<float>(0));
+
+        for (int i = 0; i < (32 / 16); ++i) {
+            warp_A = &A[(warp_row_idx * 16) + (i * 16) * lda];
+            warp_B = &B[(i * 16) + (warp_col_idx * 16) * ldb];
+
+            nvcuda::wmma::load_matrix_sync(a_frags, warp_A, lda);
+            nvcuda::wmma::load_matrix_sync(b_frags, warp_B, ldb);
+            nvcuda::wmma::mma_sync(c_frag, a_frags, b_frags, c_frag);
+            nvcuda::wmma::store_matrix_sync(C, c_frag, ldc,
+                                            nvcuda::wmma::mem_col_major);
+        }
+    }
+}
+
 template <typename T, int M, int N>
 __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
-                              T *Y, const int ldy, T *R, const int ldr, T *work,
-                              const int ldwork) {
+                              T *R, const int ldr, T *work, const int ldwork) {
     // 创建shared memory，让整个block的线程能够进行数据共享
+    __shared__ __half shared_A_half[M * N];
+    __shared__ __half shared_B_half[N * N];
     extern __shared__ T shared_A[];
-    __shared__ T RR[N];
-    __shared__ int shared_work_height[6];
-    __shared__ int idx;
     const int ldaa = M;
+    __shared__ T RR[N];
+    __shared__ int shared_work_height[6]; // maximux size of m is 32 * (128 / 32) ^ 6 = 131,072
+    __shared__ int idx;
     T acc[4], q[4];  // 128 / 32 = 4
+    const int lda_half = M, ldb_half = N;
 
     // 2. 找到本线程的ID
     const int i = static_cast<int>(threadIdx.x);
@@ -31,12 +68,14 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
     const int blockIdx_x = static_cast<int>(blockIdx.x);
     const int blockDim_x = static_cast<int>(blockDim.x);
     const int blockDim_y = static_cast<int>(blockDim.y);
+    const int warp_liner_idx = (i + j * blockDim_x / 32);
 
     if (i == 0 && j == 0) {
         idx = 0;
         shared_work_height[0] = static_cast<int>(m);
         // if (blockIdx_x == 0) {
-        //     printf("shared_work_height[%d] = %d\n", idx, static_cast<int>(m));
+        //     printf("shared_work_height[%d] = %d\n", idx,
+        //     static_cast<int>(m));
         // }
     }
 
@@ -200,9 +239,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
             int rRowDataNum = (nn + (blockDim_x - 1)) / blockDim_x;
             for (int h = 0; h < colDataNum; h++) {
                 int opCols = j + h * blockDim_y;
-
                 if (opCols >= nn) continue;
-
 #pragma unroll
                 for (int k = 0; k < rRowDataNum; k++) {
                     if (i + k * blockDim_x < opCols) {
@@ -306,17 +343,44 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                      static_cast<int>(M));
 
         if (mm > 0) {
-            T *q_next = &shared_A[blockIdx_x * N + (idx + 1) * N * ldaa];
-            // for (int k = 0; k < M / N; k++) {
-            //     if(k * N >= mm) break;
-            //     if (i == 0 && j == 0) {
-            //         printf("idx = %d, blockIdx_x = %d, part = %d\n", idx,
-            //                blockIdx_x, k);
-            //     }
-            //     T *q_this = &shared_A[blockIdx_x * M + idx * N * ldaa + k * N];
-            //     q_this = q_this * q_next;
+            const int rowDataNumA = (mm + blockDim_x - 1) / blockDim_x;
+            const int colDataNumA = (N + blockDim_y - 1) / blockDim_y;
+            const int rowDataNumB = (N + blockDim_x - 1) / blockDim_x;
+            const int colDataNumB = colDataNumA;
 
-            // }
+            T *q_this = &shared_A[blockIdx_x * M + idx * N * ldaa];
+            T *q_next = &shared_A[blockIdx_x * N + (idx + 1) * N * ldaa];
+
+            for (int row_load_idx = 0; row_load_idx < rowDataNumA;
+                 row_load_idx++) {
+                for (int col_load_idx = 0; col_load_idx < colDataNumA;
+                     col_load_idx++) {
+                    int row_idx = i + row_load_idx * blockDim_x;
+                    int col_idx = j + col_load_idx * blockDim_y;
+                    if (row_idx < mm) {
+                        shared_A_half[row_idx + col_idx * ldaa] =
+                            __float2half(q_this[row_idx + col_idx * ldaa]);
+                    }
+                }
+            }
+
+            for (int row_load_idx = 0; row_load_idx < rowDataNumB;
+                 row_load_idx++) {
+                for (int col_load_idx = 0; col_load_idx < colDataNumB;
+                     col_load_idx++) {
+                    int row_idx = i + row_load_idx * blockDim_x;
+                    int col_idx = j + col_load_idx * blockDim_y;
+                    shared_B_half[row_idx + col_idx * ldaa] =
+                        __float2half(q_next[row_idx + col_idx * ldaa]);
+                }
+            }
+
+            __syncthreads();
+            // if(idx == 0)
+            block_tcgemm(mm, q_this, ldaa, shared_A_half, lda_half,
+                         shared_B_half, ldb_half, warp_liner_idx);
+            // if(i == 0 && j == 0)
+            //     printf("%d\n", blockIdx_x);
         }
 
         if (i == 0 && j == 0) {
@@ -325,8 +389,21 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
     }
 
     // copy shared_A[0] to A
+    int mm = min(m - static_cast<int>(blockIdx_x * M), static_cast<int>(M));
+    T *AA = &shared_A[0];
+    int rowDataNum = (mm + blockDim_x - 1) / blockDim_x;
+    for (int k = 0; k < rowDataNum; k++) {
+        if (i + k * blockDim_x < mm) {
+            A[blockIdx_x * M + i + k * blockDim_x + j * lda] =
+                AA[i + k * blockDim_x + j * ldaa];
+            A[blockIdx_x * M + i + k * blockDim_x + (j + 16) * lda] =
+                AA[i + k * blockDim_x + (j + 16) * ldaa];
+        }
+    }
 }
 
-template __global__ void my_hou_kernel<float, 128, 32>(
-    const int m, const int n, float *A, const int lda, float *Y, const int ldy,
-    float *R, const int ldr, float *work, const int ldwork);
+template __global__ void my_hou_kernel<float, 128, 32>(const int m, const int n,
+                                                       float *A, const int lda,
+                                                       float *R, const int ldr,
+                                                       float *work,
+                                                       const int ldwork);

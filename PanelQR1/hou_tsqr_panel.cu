@@ -21,11 +21,9 @@ void test_hou_tsqr_panel(int m, int n) {
 
     const int lda = m;
     const int ldr = n;
-    const int ldy = m;
 
     std::vector<T> A(m * n, 0);
     std::vector<T> A_from_gpu(m * n, 0);
-    std::vector<T> Y_from_gpu(m * n, 0);
     std::vector<T> R_from_gpu(n * n, 0);
 
     std::default_random_engine eng(0U);
@@ -35,7 +33,6 @@ void test_hou_tsqr_panel(int m, int n) {
     std::generate(A.begin(), A.end(), rand);
 
     T *d_A = nullptr;
-    T *d_Y = nullptr;
     T *d_R = nullptr;
     T *d_work = nullptr;
 
@@ -49,7 +46,6 @@ void test_hou_tsqr_panel(int m, int n) {
 
     /* step 2: copy A to device */
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(T) * m * n));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_Y), sizeof(T) * m * n));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_R), sizeof(T) * n * n));
 
     const int blockNum = (m + 128 - 1) / 128;
@@ -62,8 +58,8 @@ void test_hou_tsqr_panel(int m, int n) {
 
     CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
                           cudaMemcpyHostToDevice));
-    hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_Y, ldy, d_R, ldr,
-                               d_work, ldwork);
+    hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work,
+                               ldwork);
     CUDA_CHECK_LAST_ERROR();
 
     // cudaEvent_t start, stop;
@@ -73,16 +69,16 @@ void test_hou_tsqr_panel(int m, int n) {
     // CUDA_CHECK(cudaEventCreate(&stop));
     // for (int i{0}; i < NUM_WARPUP; ++i) {
     //     cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
-    //     hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_Y, ldy, d_R, ldr,
-    //                                d_work, ldwork);
+    //     hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work,
+    //                             ldwork);
     // }
     // CUDA_CHECK(cudaStreamSynchronize(stream));
     // for (int i{0}; i < NUM_REPEAT; ++i) {
     //     cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
     //     CUDA_CHECK(cudaEventRecord(start, stream));
 
-    //     hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_Y, ldy, d_R, ldr,
-    //                                d_work, ldwork);
+    //     hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work,
+    //                             ldwork);
 
     //     CUDA_CHECK(cudaEventRecord(stop, stream));
     //     CUDA_CHECK(cudaEventSynchronize(stop));
@@ -95,9 +91,6 @@ void test_hou_tsqr_panel(int m, int n) {
     CUDA_CHECK(cudaMemcpyAsync(A_from_gpu.data(), d_A,
                                sizeof(T) * A_from_gpu.size(),
                                cudaMemcpyDeviceToHost, stream));
-    CUDA_CHECK(cudaMemcpyAsync(Y_from_gpu.data(), d_Y,
-                               sizeof(T) * Y_from_gpu.size(),
-                               cudaMemcpyDeviceToHost, stream));
     CUDA_CHECK(cudaMemcpyAsync(R_from_gpu.data(), d_R,
                                sizeof(T) * R_from_gpu.size(),
                                cudaMemcpyDeviceToHost, stream));
@@ -108,7 +101,6 @@ void test_hou_tsqr_panel(int m, int n) {
 
     /* free resources */
     CUDA_CHECK(cudaFree(d_A));
-    CUDA_CHECK(cudaFree(d_Y));
     CUDA_CHECK(cudaFree(d_R));
     CUDA_CHECK(cudaFree(d_work));
 
@@ -124,7 +116,7 @@ template void test_hou_tsqr_panel<float>(int m, int n);
 // template void test_hou_tsqr_panel<double>(int m, int n);
 
 int main(int argc, char *argv[]) {
-    int m = 2048, n = 32;
+    int m = 2048 + 32, n = 32;
     int dataType = 1;
 
     print_device_info();
