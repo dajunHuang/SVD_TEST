@@ -40,6 +40,8 @@ void hou_tsqr_panel(cublasHandle_t cublas_handle, int m, int n, T *A, int lda,
     // 2.2直接创建这么多个核函数进行QR分解,A中存放Q, work中存放R
     my_hou_kernel<T, M, N>
         <<<blockNum, blockDim, share_memory_size>>>(m, n, A, lda, Y, ldy, R, ldr, work, lwork);
+    
+    // printDeviceMatrixV2(R, ldr, 32, 32);
 }
 
 template void hou_tsqr_panel<float, 128, 32>(cublasHandle_t cublas_handle,

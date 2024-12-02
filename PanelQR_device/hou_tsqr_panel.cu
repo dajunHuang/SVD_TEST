@@ -125,7 +125,7 @@ template void test_hou_tsqr_panel<float>(size_t m, size_t n);
 template void test_hou_tsqr_panel<double>(size_t m, size_t n);
 
 int main(int argc, char *argv[]) {
-    size_t m = 8192, n = 32;
+    size_t m = 2048, n = 32;
     int dataType = 1;
 
     print_device_info();

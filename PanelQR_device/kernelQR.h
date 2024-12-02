@@ -165,9 +165,9 @@ __global__ void QR_kernel(const size_t m, const size_t n, const T *A,
                           const size_t lda, T *Y, const size_t ldy, T *R,
                           const size_t ldr, T *work, const size_t ldwork) {
     const size_t ldsa{M}, ldsr{N};
-    __shared__ T shared_A[M * N * 4];
+    extern __shared__ T shared_A[];
     __shared__ T shared_RR[N];
-    __shared__ int shared_work_height[4];
+    __shared__ int shared_work_height[3];
     __shared__ int idx;
     // T acc[rowDataNum] = {0};
     T acc[4] = {0};

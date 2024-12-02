@@ -47,7 +47,7 @@ void printDeviceMatrixV2(T *dA, long ldA, long rows, long cols)
     for (long j = 0; j < cols; j++)
     {
       cudaMemcpy(&matrix, dA + i + j * ldA, sizeof(T), cudaMemcpyDeviceToHost);
-      printf("%5.3f ", matrix);
+      printf("%5.1f ", matrix);
     }
     printf("\n");
   }
