@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "TallShinnyQR.h"
+#include "TallShinnyQR_ori.h"
 
 #define NUM_WARPUP 20
 #define NUM_REPEAT 50
@@ -35,6 +36,7 @@ void test_hou_tsqr_panel(int m, int n) {
     T *d_A = nullptr;
     T *d_R = nullptr;
     T *d_work = nullptr;
+    T *d_work_ori = nullptr;
 
     /* step 1: create cusolver handle, bind a stream */
     // CUSOLVER_CHECK(cusolverDnCreate(&cusolverH));
@@ -47,6 +49,8 @@ void test_hou_tsqr_panel(int m, int n) {
     /* step 2: copy A to device */
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(T) * m * n));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_R), sizeof(T) * n * n));
+    CUDA_CHECK(
+        cudaMalloc(reinterpret_cast<void **>(&d_work_ori), sizeof(T) * m * m));
 
     const int blockNum = (m + 128 - 1) / 128;
     const int ldwork{32 * blockNum};
@@ -58,8 +62,18 @@ void test_hou_tsqr_panel(int m, int n) {
 
     CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
                           cudaMemcpyHostToDevice));
+    printf("hou_tsqr_panel\n");
     hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work,
                                ldwork);
+    printDeviceMatrixV2(d_A, lda, 16, 16);
+    CUDA_CHECK_LAST_ERROR();
+
+    CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
+                          cudaMemcpyHostToDevice));
+    printf("\nhou_tsqr_panel_ori\n");
+    hou_tsqr_panel_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr,
+                                   d_work_ori);
+    printDeviceMatrixV2(d_A, lda, 16, 16);
     CUDA_CHECK_LAST_ERROR();
 
     // cudaEvent_t start, stop;
@@ -68,14 +82,15 @@ void test_hou_tsqr_panel(int m, int n) {
     // CUDA_CHECK(cudaEventCreate(&start));
     // CUDA_CHECK(cudaEventCreate(&stop));
     // for (int i{0}; i < NUM_WARPUP; ++i) {
-    //     cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
-    //     hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work,
+    //     cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
+    //     cudaMemcpyHostToDevice); hou_tsqr_panel<T, 128, 32>(cublasH, m, n,
+    //     d_A, lda, d_R, ldr, d_work,
     //                             ldwork);
     // }
     // CUDA_CHECK(cudaStreamSynchronize(stream));
     // for (int i{0}; i < NUM_REPEAT; ++i) {
-    //     cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
-    //     CUDA_CHECK(cudaEventRecord(start, stream));
+    //     cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
+    //     cudaMemcpyHostToDevice); CUDA_CHECK(cudaEventRecord(start, stream));
 
     //     hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work,
     //                             ldwork);

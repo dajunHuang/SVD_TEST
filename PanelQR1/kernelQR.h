@@ -1,6 +1,9 @@
+#include <cooperative_groups.h>
 #include <mma.h>
 
 #include "cusolver_utils.h"
+
+namespace cg = cooperative_groups;
 
 #pragma once
 template <typename T>
@@ -67,6 +70,8 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
     const int blockDim_y = static_cast<int>(blockDim.y);
     const int warp_liner_idx = (i + j * blockDim_x / 32);
 
+    cg::grid_group grid = cg::this_grid();
+
     if (i == 0 && j == 0) {
         idx = 0;
         shared_work_height[0] = static_cast<int>(m);
@@ -107,6 +112,18 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                               (j + 16) * lda];
                     }
                 }
+                // __syncthreads();
+                // if (blockIdx_x == 0 && i == 0 && j == 0) {
+                //     printf("load from A[%d][%d] to shared_A[0]\n",
+                //            blockIdx_x * M, 0);
+                //     for (int v = 0; v < 36; v++) {
+                //         for (int l = 0; l < 4; l++) {
+                //             printf("AA[%d][%d] = %f ", v, l, AA[v + l * ldaa]);
+                //         }
+                //         printf("\n");
+                //     }
+                //     printf("\n");
+                // }
             } else {
                 // 假定n=N=32，每一个线程拷贝2列
                 for (int k = 0; k < rowDataNum; k++) {
@@ -119,6 +136,18 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                                  (j + 16) * ldwork];
                     }
                 }
+                // __syncthreads();
+                // if (blockIdx.x == 0 && i == 0 && j == 0) {
+                //     printf("load from work[%d][%d] to shared_A[%d]\n",
+                //            blockIdx_x * M, 0, idx);
+                //     for (int v = 0; v < 36; v++) {
+                //         for (int l = 0; l < 4; l++) {
+                //             printf("AA[%d][%d] = %f ", v, l, AA[v + l * ldaa]);
+                //         }
+                //         printf("\n");
+                //     }
+                //     printf("\n");
+                // }
             }
 
             __syncthreads();
@@ -149,6 +178,11 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                     // 需要将1个lane中所有线程求出的norm_squre加到一起,同时进行同步
                     T norm_x_squre = warpAllReduceSum(nu);
                     T norm_x = sqrt(norm_x_squre);
+
+                    // if(blockIdx_x == 0 && i == 0 && j == 0) {
+                    //     printf("norm_x_squre: %f ", norm_x_squre);
+                    //     printf("\n");
+                    // }
 
                     // 1、求u=x/norm(x);
                     T scale = 1.0 / norm_x;
@@ -231,6 +265,8 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                 ldr_to = ldwork;
             }
 
+            __syncthreads();
+
             // 获得R矩阵，将AA的上三角部分拷贝到R中
             // 以R矩阵来进行循环
             int rRowDataNum = (nn + (blockDim_x - 1)) / blockDim_x;
@@ -251,6 +287,24 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                     }
                 }
             }
+
+            __syncthreads();
+
+            // if (blockIdx.x == 0 && i == 0 && j == 0) {
+            //     if (work_height <= M) {
+            //         printf("save to R\n");
+            //     } else {
+            //         printf("save to work[%d][%d]\n", blockIdx_x * N, 0);
+            //     }
+            //     for (int v = 0; v < 32; v++) {
+            //         for (int l = 0; l < 4; l++) {
+            //             printf("R_to[%d][%d] = %f ", v, l,
+            //                    R_to[v + l * ldr_to]);
+            //         }
+            //         printf("\n");
+            //     }
+            //     printf("\n");
+            // }
 
             // 来求Q，使用的方法是Q=(I-uu')Q,
             // 所以对于Q的一列而言q=(I-uu')q，计算q-uu'q q表示是Q矩阵的1列
@@ -318,7 +372,8 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
             // }
         }
 
-        __syncthreads();
+        // __syncthreads();
+        grid.sync();
     }
 
     if (i == 0 && j == 0) {

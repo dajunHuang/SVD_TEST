@@ -39,11 +39,11 @@ void hou_tsqr_panel(cublasHandle_t cublas_handle, int m, int n, T *A, int lda,
     // 2.1 把瘦高矩阵进行按列分段
     int blockNum = (m + M - 1) / M;
 
+    void *kernelArgs[] = {&m, &n, &A, &lda, &R, &ldr, &work, &lwork};
     // 2.2直接创建这么多个核函数进行QR分解,A中存放Q, work中存放R
-    my_hou_kernel<T, M, N><<<blockNum, blockDim, share_memory_size>>>(
-        m, n, A, lda, R, ldr, work, lwork);
-
-    printDeviceMatrixV2(R, ldr, 16, 16);
+    // my_hou_kernel<T, M, N><<<blockNum, blockDim, share_memory_size>>>(
+    //     m, n, A, lda, R, ldr, work, lwork);
+    cudaLaunchCooperativeKernel((void*)my_hou_kernel<T, M, N>, blockNum, blockDim, kernelArgs, share_memory_size);
 }
 
 template void hou_tsqr_panel<float, 128, 32>(cublasHandle_t cublas_handle,
