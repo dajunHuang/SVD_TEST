@@ -25,6 +25,13 @@ void hou_tsqr_panel(cublasHandle_t cublas_handle, int m, int n, T *A, int lda,
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     share_memory_size));
 
+    // int numSMs = 0;
+    // int maxBlocksPerSM = 0;
+    // cudaDeviceGetAttribute(&numSMs, cudaDevAttrMultiProcessorCount, 0);
+    // cudaOccupancyMaxActiveBlocksPerMultiprocessor(&maxBlocksPerSM, hou_tsqr_panel<T, 128, 32>, 32*16, share_memory_size);
+    // int maxBlocks = maxBlocksPerSM * numSMs;
+    // printf("numSMs: %d maxBlocksPerSM: %d maxBlocks: %d\n", numSMs, maxBlocksPerSM, maxBlocks);
+
     // 一个block最大为32x32，一个block中的thread可以使用共享内存进行通信，
     //  所以使用一个block处理一个最大为<M,N>的矩阵块，并对它进行QR分解
     dim3 blockDim(32, 16);
@@ -39,14 +46,18 @@ void hou_tsqr_panel(cublasHandle_t cublas_handle, int m, int n, T *A, int lda,
     // 2.1 把瘦高矩阵进行按列分段
     int blockNum = (m + M - 1) / M;
 
-    void *kernelArgs[] = {&m, &n, &A, &lda, &R, &ldr, &work, &lwork};
     // 2.2直接创建这么多个核函数进行QR分解,A中存放Q, work中存放R
-    // my_hou_kernel<T, M, N><<<blockNum, blockDim, share_memory_size>>>(
-    //     m, n, A, lda, R, ldr, work, lwork);
-    cudaLaunchCooperativeKernel((void*)my_hou_kernel<T, M, N>, blockNum, blockDim, kernelArgs, share_memory_size);
+    my_hou_kernel<T, M, N><<<blockNum, blockDim, share_memory_size>>>(
+        m, n, A, lda, R, ldr, work, lwork);
+    // void *kernelArgs[] = {&m, &n, &A, &lda, &R, &ldr, &work, &lwork};
+    // cudaLaunchCooperativeKernel((void*)my_hou_kernel<T, M, N>, blockNum, blockDim, kernelArgs, share_memory_size);
 }
 
-template void hou_tsqr_panel<float, 128, 32>(cublasHandle_t cublas_handle,
-                                             int m, int n, float *A, int lda,
-                                             float *R, int ldr, float *work,
+// template void hou_tsqr_panel<float, 128, 32>(cublasHandle_t cublas_handle,
+//                                              int m, int n, float *A, int lda,
+//                                              float *R, int ldr, float *work,
+//                                              int lwork);
+template void hou_tsqr_panel<double, 128, 32>(cublasHandle_t cublas_handle,
+                                             int m, int n, double *A, int lda,
+                                             double *R, int ldr, double *work,
                                              int lwork);

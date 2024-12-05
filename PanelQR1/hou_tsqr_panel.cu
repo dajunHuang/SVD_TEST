@@ -11,8 +11,8 @@
 #include "TallShinnyQR.h"
 #include "TallShinnyQR_ori.h"
 
-#define NUM_WARPUP 20
-#define NUM_REPEAT 50
+#define NUM_WARPUP 5
+#define NUM_REPEAT 10
 
 template <typename T>
 void test_hou_tsqr_panel(int m, int n) {
@@ -53,28 +53,37 @@ void test_hou_tsqr_panel(int m, int n) {
         cudaMalloc(reinterpret_cast<void **>(&d_work_ori), sizeof(T) * m * m));
 
     const int blockNum = (m + 128 - 1) / 128;
-    const int ldwork{32 * blockNum};
+    const int ldwork = m;
+
 
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work),
-                          sizeof(T) * ldwork * 32));
+                          sizeof(T) * m * n));
     CUDA_CHECK(cudaMemcpyAsync(d_A, A.data(), sizeof(T) * A.size(),
                                cudaMemcpyHostToDevice, stream));
-
-    CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
-                          cudaMemcpyHostToDevice));
-    printf("hou_tsqr_panel\n");
-    hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work,
-                               ldwork);
-    printDeviceMatrixV2(d_A, lda, 16, 16);
-    CUDA_CHECK_LAST_ERROR();
 
     CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
                           cudaMemcpyHostToDevice));
     printf("\nhou_tsqr_panel_ori\n");
     hou_tsqr_panel_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr,
                                    d_work_ori);
-    printDeviceMatrixV2(d_A, lda, 16, 16);
+    CUDA_CHECK(cudaDeviceSynchronize());
     CUDA_CHECK_LAST_ERROR();
+    printf("R\n");
+    printDeviceMatrixV2(d_R, ldr, 32, 32);
+    printf("Q\n");
+    printDeviceMatrixV2(d_A, lda, 169, 32);
+
+    CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
+                          cudaMemcpyHostToDevice));
+    printf("hou_tsqr_panel\n");
+    hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work,
+                               ldwork);
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK_LAST_ERROR();
+    printf("R\n");
+    printDeviceMatrixV2(d_R, ldr, 32, 32);
+    printf("Q\n");
+    printDeviceMatrixV2(d_work, ldwork, 169, 32);
 
     // cudaEvent_t start, stop;
     // float time = 0, temp_time = 0;
@@ -127,14 +136,14 @@ void test_hou_tsqr_panel(int m, int n) {
     CUDA_CHECK(cudaDeviceReset());
 }
 
-template void test_hou_tsqr_panel<float>(int m, int n);
-// template void test_hou_tsqr_panel<double>(int m, int n);
+// template void test_hou_tsqr_panel<float>(int m, int n);
+template void test_hou_tsqr_panel<double>(int m, int n);
 
 int main(int argc, char *argv[]) {
-    int m = 2048, n = 32;
-    int dataType = 1;
+    int m = 512, n = 32;
+    int dataType = 2;
 
-    // print_device_info();
+    print_device_info();
 
     if (argc >= 4) {
         m = atoi(argv[1]);
@@ -145,9 +154,9 @@ int main(int argc, char *argv[]) {
     if (0 == dataType) {
         // test_hou_tsqr_panel<half>(m, n);
     } else if (1 == dataType) {
-        test_hou_tsqr_panel<float>(m, n);
+        // test_hou_tsqr_panel<float>(m, n);
     } else if (2 == dataType) {
-        // test_hou_tsqr_panel<double>(m, n);
+        test_hou_tsqr_panel<double>(m, n);
     }
 
     return 0;

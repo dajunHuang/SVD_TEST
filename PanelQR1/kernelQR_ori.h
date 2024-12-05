@@ -55,7 +55,7 @@ __global__ void my_hou_kernel_ori(long m, long n, T *A, long lda, T *R, long ldr
     // if(blockIdx.x == 0 && i == 0 && j == 0) {
     //     printf("load to AA\n");
     //     for(int v = 0; v < 36; v++) {
-    //         for(int l = 0; l < 4; l++) {
+    //         for(int l = 0; l < 6; l++) {
     //             printf("AA[%d][%d] = %f ", v, l, AA[v + l * ldaa]);
     //         }
     //         printf("\n");
@@ -196,17 +196,11 @@ __global__ void my_hou_kernel_ori(long m, long n, T *A, long lda, T *R, long ldr
     // if(blockIdx.x == 0 && i == 0 && j == 0) {
     //     printf("save to R\n");
     //     for(int v = 0; v < 32; v++) {
-    //         for(int l = 0; l < 4; l++) {
+    //         for(int l = 0; l < 32; l++) {
     //             printf("R[%d][%d] = %f ", v, l, R[v + l * ldr]);
     //         }
     //         printf("\n");
     //     }
-    //     printf("\n");
-    // }
-
-    // if(blockIdx.x == 0 && i == 0 && j == 0) {
-    //     for(int v = 0; v < 5; v++)
-    //         printf("RR[%d] = %f ", v, RR[v]);
     //     printf("\n");
     // }
 
@@ -264,6 +258,18 @@ __global__ void my_hou_kernel_ori(long m, long n, T *A, long lda, T *R, long ldr
                 A[i + k * blockDim.x + opCols * lda] = q[k];
             }
         }
+    }
+
+    __syncthreads();
+    if(blockIdx.x == 0 && i == 0 && j == 0) {
+        printf("save to A\n");
+        for(int v = 0; v < 128; v++) {
+            for(int l = 0; l < 32; l++) {
+                printf("%9.6f ", A[v + l * lda]);
+            }
+            printf("\n");
+        }
+        printf("\n");
     }
 }
 
