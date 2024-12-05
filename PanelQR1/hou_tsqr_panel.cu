@@ -52,9 +52,7 @@ void test_hou_tsqr_panel(int m, int n) {
     CUDA_CHECK(
         cudaMalloc(reinterpret_cast<void **>(&d_work_ori), sizeof(T) * m * m));
 
-    const int blockNum = (m + 128 - 1) / 128;
     const int ldwork = m;
-
 
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work),
                           sizeof(T) * m * n));
@@ -71,7 +69,7 @@ void test_hou_tsqr_panel(int m, int n) {
     printf("R\n");
     printDeviceMatrixV2(d_R, ldr, 32, 32);
     printf("Q\n");
-    printDeviceMatrixV2(d_A, lda, 169, 32);
+    printDeviceMatrixV2(d_A, lda, m < 169 ? m : 169, 32);
 
     CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
                           cudaMemcpyHostToDevice));
@@ -83,7 +81,7 @@ void test_hou_tsqr_panel(int m, int n) {
     printf("R\n");
     printDeviceMatrixV2(d_R, ldr, 32, 32);
     printf("Q\n");
-    printDeviceMatrixV2(d_work, ldwork, 169, 32);
+    printDeviceMatrixV2(d_work, ldwork, m < 169 ? m : 169, 32);
 
     // cudaEvent_t start, stop;
     // float time = 0, temp_time = 0;
@@ -92,19 +90,26 @@ void test_hou_tsqr_panel(int m, int n) {
     // CUDA_CHECK(cudaEventCreate(&stop));
     // for (int i{0}; i < NUM_WARPUP; ++i) {
     //     cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
-    //     cudaMemcpyHostToDevice); hou_tsqr_panel<T, 128, 32>(cublasH, m, n,
-    //     d_A, lda, d_R, ldr, d_work,
+    //     cudaMemcpyHostToDevice); 
+    //     CUDA_CHECK(cudaDeviceSynchronize());
+    //     printf("warmup %d\n", i);
+    //     hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work,
     //                             ldwork);
+    //     CUDA_CHECK(cudaDeviceSynchronize());
     // }
     // CUDA_CHECK(cudaStreamSynchronize(stream));
     // for (int i{0}; i < NUM_REPEAT; ++i) {
     //     cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
-    //     cudaMemcpyHostToDevice); CUDA_CHECK(cudaEventRecord(start, stream));
+    //     cudaMemcpyHostToDevice); 
+    //     CUDA_CHECK(cudaDeviceSynchronize());
+    //     printf("repeat %d\n", i);
+    //     CUDA_CHECK(cudaEventRecord(start, stream));
 
     //     hou_tsqr_panel<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work,
     //                             ldwork);
 
     //     CUDA_CHECK(cudaEventRecord(stop, stream));
+    //     CUDA_CHECK(cudaDeviceSynchronize());
     //     CUDA_CHECK(cudaEventSynchronize(stop));
     //     CUDA_CHECK_LAST_ERROR();
     //     CUDA_CHECK(cudaEventElapsedTime(&temp_time, start, stop));
@@ -127,6 +132,7 @@ void test_hou_tsqr_panel(int m, int n) {
     CUDA_CHECK(cudaFree(d_A));
     CUDA_CHECK(cudaFree(d_R));
     CUDA_CHECK(cudaFree(d_work));
+    CUDA_CHECK(cudaFree(d_work_ori));
 
     // CUSOLVER_CHECK(cusolverDnDestroy(cusolverH));
     CUBLAS_CHECK(cublasDestroy(cublasH));
@@ -140,7 +146,7 @@ void test_hou_tsqr_panel(int m, int n) {
 template void test_hou_tsqr_panel<double>(int m, int n);
 
 int main(int argc, char *argv[]) {
-    int m = 512, n = 32;
+    int m = 8192, n = 32;
     int dataType = 2;
 
     print_device_info();

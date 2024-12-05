@@ -149,18 +149,18 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                     }
                 }
                 __syncthreads();
-                // if (blockIdx_x == 7 && i == 0 && j == 0) {
-                //     printf("load from A[%d][%d] to shared_A[0]\n",
-                //             blockIdx_x * M, 0);
-                //     for (int v = 0; v < mm; v++) {
-                //         for (int l = 0; l < 32; l++) {
-                //             printf("%9.6f ", AA[v + l *
-                //                     ldaa]);
-                //         }
-                //         printf("\n");
-                //     }
-                //     printf("\n");
-                // }
+                if (blockIdx_x == 7 && i == 0 && j == 0) {
+                    printf("load from A[%d][%d] to shared_A[0]\n",
+                            blockIdx_x * M, 0);
+                    for (int v = 0; v < mm; v++) {
+                        for (int l = 0; l < 32; l++) {
+                            printf("%9.6f ", AA[v + l *
+                                    ldaa]);
+                        }
+                        printf("\n");
+                    }
+                    printf("\n");
+                }
             } else {
                 // 假定n=N=32，每一个线程拷贝2列
                 for (int k = 0; k < rowDataNum; k++) {
@@ -174,18 +174,18 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                     }
                 }
                 __syncthreads();
-                // if (blockIdx_x == 7 && i == 0 && j == 0) {
-                //     printf("load from work[%d][%d] to shared_A[%d]\n",
-                //             blockIdx_x * M, 0, idx);
-                //     for (int v = 0; v < mm; v++) {
-                //         for (int l = 0; l < 32; l++) {
-                //             printf("%9.6f ", AA[v + l *
-                //                     ldaa]);
-                //         }
-                //         printf("\n");
-                //     }
-                //     printf("\n");
-                // }
+                if (blockIdx_x == 7 && i == 0 && j == 0) {
+                    printf("load from work[%d][%d] to shared_A[%d]\n",
+                            blockIdx_x * M, 0, idx);
+                    for (int v = 0; v < mm; v++) {
+                        for (int l = 0; l < 32; l++) {
+                            printf("%9.6f ", AA[v + l *
+                                    ldaa]);
+                        }
+                        printf("\n");
+                    }
+                    printf("\n");
+                }
             }
 
             __syncthreads();
@@ -213,9 +213,9 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                         nu += acc[k];
                     }
 
-                    // if(blockIdx_x == 7 && idx == 2 && cols == 0) {
-                    //     printf("x: %d y: %d nu: %9.3f, AA[%d][%d]: %9.3f\n", i, j, nu, i, cols, AA[i + cols * ldaa]);
-                    // }
+                    if(blockIdx_x == 7 && idx == 2 && cols == 0) {
+                        printf("x: %d y: %d nu: %9.3f, AA[%d][%d]: %9.3f\n", i, j, nu, i, cols, AA[i + cols * ldaa]);
+                    }
 
                     // 需要将1个lane中所有线程求出的norm_squre加到一起,同时进行同步
                     T norm_x_squre = warpAllReduceSum(nu);
@@ -224,9 +224,9 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                     // 1、求u=x/norm(x);
                     T scale = 1.0 / norm_x;
 
-                    // if(blockIdx_x == 7 && i == 0 && idx == 2 && cols == 0) {
-                    //    printf("norm_x_squre: %9.3f, norm_x: %9.3f, scale: %9.3f\n", norm_x_squre, norm_x, scale);
-                    // }
+                    if(blockIdx_x == 7 && i == 0 && idx == 2 && cols == 0) {
+                       printf("norm_x_squre: %9.3f, norm_x: %9.3f, scale: %9.3f\n", norm_x_squre, norm_x, scale);
+                    }
 
 #pragma unroll
                     for (int k = 0; k < rowDataNum; k++) {
@@ -237,15 +237,15 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                     }
                     __syncwarp();
 
-                    // if(cols == 0 && idx == 2 && blockIdx_x == 7 && i == 0 && j == 0) {
-                    //     printf("after %d times scale\n", cols);
-                    //     for(int v = 0; v < mm; ++v) {
-                    //         for(int l = 0; l < n; ++l) {
-                    //             printf("%9.3f ", AA[v + l * ldaa]);
-                    //         }
-                    //         printf("\n");
-                    //     }
-                    // }
+                    if(cols == 0 && idx == 2 && blockIdx_x == 7 && i == 0 && j == 0) {
+                        printf("after %d times scale\n", cols);
+                        for(int v = 0; v < mm; ++v) {
+                            for(int l = 0; l < n; ++l) {
+                                printf("%9.3f ", AA[v + l * ldaa]);
+                            }
+                            printf("\n");
+                        }
+                    }
 
                     // 2、求u(1)= u(1)+sign(u(1)); 每列找一个线程;来计算即可
                     if (0 == i) {
@@ -255,15 +255,15 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                         RR[cols] = (u1 >= 0) ? -norm_x : norm_x;
                     }
 
-                    // if(cols == 0 && idx == 2 && blockIdx_x == 7 && i == 0 && j == 0) {
-                    //     printf("after %d set identity\n", cols);
-                    //     for(int v = 0; v < mm; ++v) {
-                    //         for(int l = 0; l < n; ++l) {
-                    //             printf("%9.3f ", AA[v + l * ldaa]);
-                    //         }
-                    //         printf("\n");
-                    //     }
-                    // }
+                    if(cols == 0 && idx == 2 && blockIdx_x == 7 && i == 0 && j == 0) {
+                        printf("after %d set identity\n", cols);
+                        for(int v = 0; v < mm; ++v) {
+                            for(int l = 0; l < n; ++l) {
+                                printf("%9.3f ", AA[v + l * ldaa]);
+                            }
+                            printf("\n");
+                        }
+                    }
                     __syncwarp();
 
                     // 3、u=u/sqrt(abs(u(1))),计算HouseHolder向量
@@ -281,15 +281,15 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                         }
                     }
 
-                    // if(cols == 0 && idx == 2 && blockIdx_x == 7 && i == 0 && j == 0) {
-                    //     printf("after %d times scale 2\n", cols);
-                    //     for(int v = 0; v < mm; ++v) {
-                    //         for(int l = 0; l < n; ++l) {
-                    //             printf("%9.3f ", AA[v + l * ldaa]);
-                    //         }
-                    //         printf("\n");
-                    //     }
-                    // }
+                    if(cols == 0 && idx == 2 && blockIdx_x == 7 && i == 0 && j == 0) {
+                        printf("after %d times scale 2\n", cols);
+                        for(int v = 0; v < mm; ++v) {
+                            for(int l = 0; l < n; ++l) {
+                                printf("%9.3f ", AA[v + l * ldaa]);
+                            }
+                            printf("\n");
+                        }
+                    }
                 }
 
                 __syncthreads();
@@ -317,33 +317,39 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                         T utx = warpAllReduceSum(nu);
 
                         
-                        // if(cols == 0 && idx == 2 && blockIdx_x == 7 && i == 0) {
-                        //     printf("opcol: %d, utx: %9.6f\n", opCols, utx);
-                        // }
+                        if(cols == 0 && idx == 2 && blockIdx_x == 7 && i == 0) {
+                            printf("opcol: %d, utx: %9.6f\n", opCols, utx);
+                        }
                         // 计算x-uu'x
 #pragma unroll
-                        for (int k = 0; k < rowDataNum; k++) {
-                            // if条件中，前部部分是为了防止最后一个block中线程行越界；后半部分在计算HouseHolder向量是只计算对角线一下的元素
-                            if (i + k * blockDim_x < mm &&
-                                i + k * blockDim_x >= cols) {
-                                AA[i + k * blockDim_x + opCols * ldaa] -=
-                                    utx * AA[i + k * blockDim_x + cols * ldaa];
-                                // if(idx == 2 && blockIdx_x == 7 && opCols == 1){
-                                //     printf("update A[%d][%d] to %9.6f\n", i + k * blockDim_x, opCols, AA[i + k * blockDim_x + opCols * ldaa]);
-                                // } 
+                        // for (int k = 0; k < rowDataNum; k++) {
+                        //     // if条件中，前部部分是为了防止最后一个block中线程行越界；后半部分在计算HouseHolder向量是只计算对角线一下的元素
+                        //     if (i + k * blockDim_x < mm &&
+                        //         i + k * blockDim_x >= cols) {
+                        //         AA[i + k * blockDim_x + opCols * ldaa] -=
+                        //             utx * AA[i + k * blockDim_x + cols * ldaa];
+                        //         if(idx == 2 && blockIdx_x == 7 && opCols == 1){
+                        //             printf("update A[%d][%d] to %9.6f\n", i + k * blockDim_x, opCols, AA[i + k * blockDim_x + opCols * ldaa]);
+                        //         } 
+                        //     }
+                        // }
+
+                        if(i == 0) {
+                            for(int k = cols; k < mm; ++k) {
+                                AA[k + opCols * ldaa] -= utx * AA[k + cols * ldaa];
                             }
                         }
 
                         __syncwarp();
-                        // if(cols == 0 && idx == 2 && blockIdx_x == 7 && i == 0 && (opCols == 2)) {
-                        //     printf("after update opCol: %d by %d using utx: %9.3f\n", opCols, cols, utx);
-                        //     for(int v = 0; v < mm; ++v) {
-                        //         for(int l = 0; l < n; ++l) {
-                        //             printf("%9.3lf ", AA[v + l * ldaa]);
-                        //         }
-                        //         printf("\n");
-                        //     }
-                        // }
+                        if(cols == 0 && idx == 2 && blockIdx_x == 7 && i == 0 && (opCols == 2)) {
+                            printf("after update opCol: %d by %d using utx: %9.3f\n", opCols, cols, utx);
+                            for(int v = 0; v < mm; ++v) {
+                                for(int l = 0; l < n; ++l) {
+                                    printf("%9.3lf ", AA[v + l * ldaa]);
+                                }
+                                printf("\n");
+                            }
+                        }
 
                     }
                 }
@@ -393,21 +399,21 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
             __syncthreads();
 
-            // if (blockIdx_x == 7 && i == 0 && j == 0) {
-            //     if (work_height <= M) {
-            //         printf("save to R\n");
-            //     } else {
-            //      printf("save to work[%d][%d]\n", blockIdx_x * N, 0);
-            //     }
-            //     for (int v = 0; v < 32; v++) {
-            //         for (int l = 0; l < 32; l++) {
-            //             printf("%9.6f ",
-            //                     R_to[v + l * ldr_to]);
-            //         }
-            //         printf("\n");
-            //     }
-            //     printf("\n");
-            // }
+            if (blockIdx_x == 7 && i == 0 && j == 0) {
+                if (work_height <= M) {
+                    printf("save to R\n");
+                } else {
+                 printf("save to work[%d][%d]\n", blockIdx_x * N, 0);
+                }
+                for (int v = 0; v < 32; v++) {
+                    for (int l = 0; l < 32; l++) {
+                        printf("%9.6f ",
+                                R_to[v + l * ldr_to]);
+                    }
+                    printf("\n");
+                }
+                printf("\n");
+            }
 
             // 来求Q，使用的方法是Q=(I-uu')Q,
             // 所以对于Q的一列而言q=(I-uu')q，计算q-uu'q q表示是Q矩阵的1列
