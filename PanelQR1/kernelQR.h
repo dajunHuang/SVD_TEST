@@ -70,7 +70,6 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                               T *R, const int ldr, T *work, const int ldwork) {
     // 创建shared memory，让整个block的线程能够进行数据共享
     extern __shared__ T shared_A[];
-    __shared__ T temp_A[M * N];
     const int ldaa = M;
     __shared__ T RR[N];
     __shared__ int shared_work_height[7];  // max reduction_time = 6
@@ -129,56 +128,29 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
             T *AA = &shared_A[idx * N * ldaa];
 
-            if (idx == 0) {
-                // 假定n=N=32，每一个线程拷贝2列
-                for (int k = 0; k < rowDataNum; k++) {
-                    if (i + k * blockDim_x < mm) {
-                        AA[i + k * blockDim_x + j * ldaa] =
-                            A[blockIdx_x * M + i + k * blockDim_x + j * lda];
-                        AA[i + k * blockDim_x + (j + 16) * ldaa] =
-                            A[blockIdx_x * M + i + k * blockDim_x +
-                              (j + 16) * lda];
-                    }
+            // 假定n=N=32，每一个线程拷贝2列
+            for (int k = 0; k < rowDataNum; k++) {
+                if (i + k * blockDim_x < mm) {
+                    AA[i + k * blockDim_x + j * ldaa] =
+                        A[blockIdx_x * M + i + k * blockDim_x + j * lda];
+                    AA[i + k * blockDim_x + (j + 16) * ldaa] =
+                        A[blockIdx_x * M + i + k * blockDim_x +
+                            (j + 16) * lda];
                 }
-                __syncthreads();
-                // if (blockIdx_x == 7 && i == 0 && j == 0) {
-                //     printf("load from A[%d][%d] to shared_A[0]\n",
-                //             blockIdx_x * M, 0);
-                //     for (int v = 0; v < mm; v++) {
-                //         for (int l = 0; l < 32; l++) {
-                //             printf("%9.6f ", AA[v + l *
-                //                     ldaa]);
-                //         }
-                //         printf("\n");
-                //     }
-                //     printf("\n");
-                // }
-            } else {
-                // 假定n=N=32，每一个线程拷贝2列
-                for (int k = 0; k < rowDataNum; k++) {
-                    if (i + k * blockDim_x < mm) {
-                        AA[i + k * blockDim_x + j * ldaa] =
-                            work[blockIdx_x * M + i + k * blockDim_x +
-                                 j * ldwork];
-                        AA[i + k * blockDim_x + (j + 16) * ldaa] =
-                            work[blockIdx_x * M + i + k * blockDim_x +
-                                 (j + 16) * ldwork];
-                    }
-                }
-                __syncthreads();
-                // if (blockIdx_x == 7 && i == 0 && j == 0) {
-                //     printf("load from work[%d][%d] to shared_A[%d]\n",
-                //             blockIdx_x * M, 0, idx);
-                //     for (int v = 0; v < mm; v++) {
-                //         for (int l = 0; l < 32; l++) {
-                //             printf("%9.6f ", AA[v + l *
-                //                     ldaa]);
-                //         }
-                //         printf("\n");
-                //     }
-                //     printf("\n");
-                // }
             }
+            __syncthreads();
+            // if (blockIdx_x == 7 && i == 0 && j == 0) {
+            //     printf("load from A[%d][%d] to shared_A[0]\n",
+            //             blockIdx_x * M, 0);
+            //     for (int v = 0; v < mm; v++) {
+            //         for (int l = 0; l < 32; l++) {
+            //             printf("%9.6f ", AA[v + l *
+            //                     ldaa]);
+            //         }
+            //         printf("\n");
+            //     }
+            //     printf("\n");
+            // }
 
             __syncthreads();
 
@@ -356,8 +328,8 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                 R_to = R;
                 ldr_to = ldr;
             } else {
-                R_to = &work[blockIdx_x * N];
-                ldr_to = ldwork;
+                R_to = &A[blockIdx_x * N];
+                ldr_to = lda;
             }
 
             __syncthreads();
@@ -450,10 +422,10 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                     }
                 }
 
-                // 4.把计算出来的q拷贝到 temp_A 中
+                // 4.把计算出来的q拷贝到 work 中
                 for (int k = 0; k < rowDataNum; k++) {
                     if (i + k * blockDim_x < mm) {
-                        temp_A[i + k * blockDim_x + opCols * ldaa] = q[k];
+                        work[blockIdx_x * M + i + k * blockDim_x + opCols * ldwork] = q[k];
                     }
                 }
             }
@@ -463,9 +435,9 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
             for (int k = 0; k < rowDataNum; k++) {
                 if (i + k * blockDim_x < mm) {
                     AA[i + k * blockDim_x + j * ldaa] =
-                        temp_A[i + k * blockDim_x + j * ldaa];
+                        work[blockIdx_x * M + i + k * blockDim_x + j * ldwork];
                     AA[i + k * blockDim_x + (j + 16) * ldaa] =
-                        temp_A[i + k * blockDim_x + (j + 16) * ldaa];
+                        work[blockIdx_x * M + i + k * blockDim_x + (j + 16) * ldwork];
                 }
             }
 
@@ -530,9 +502,10 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
             const int rowDataNumA = (mm + blockDim_x - 1) / blockDim_x;
             const int colDataNumA = (N + blockDim_y - 1) / blockDim_y;
 
-            T *work_q_next = &work[blockIdx_x * N];
+            T *q_next = &A[blockIdx_x * N];
             T *q_this = &shared_A[idx * N * ldaa];
-            T *work_q_to = &work[blockIdx_x * M];
+            T *q_to = &A[blockIdx_x * M];
+            T *q_work = &work[blockIdx_x * M];
 
             if (work_height > M) {
                 // if (i == 0 && j == 0) {
@@ -574,8 +547,8 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                     // printf("2 %d %d\n", syncCounter, endBlockNum);
                 }
 
-                block_tcgemm(mm, temp_A, ldaa, q_this, ldaa, work_q_next,
-                             ldwork, warp_liner_idx);
+                block_tcgemm(mm, q_work, ldwork, q_this, ldaa, q_next,
+                             lda, warp_liner_idx);
 
                 __threadfence();
                 __syncthreads();
@@ -607,8 +580,8 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                         int row_idx = i + row_load_idx * blockDim_x;
                         int col_idx = j + col_load_idx * blockDim_y;
                         if (row_idx < mm) {
-                            work_q_to[row_idx + col_idx * ldwork] =
-                                temp_A[row_idx + col_idx * ldaa];
+                            q_to[row_idx + col_idx * lda] =
+                                q_work[row_idx + col_idx * ldwork];
                         }
                     }
                 }
@@ -634,7 +607,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                         int row_idx = i + row_load_idx * blockDim_x;
                         int col_idx = j + col_load_idx * blockDim_y;
                         if (row_idx < mm) {
-                            work_q_to[row_idx + col_idx * ldwork] =
+                            q_to[row_idx + col_idx * lda] =
                                 q_this[row_idx + col_idx * ldaa];
                         }
                     }
@@ -655,17 +628,6 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
         // grid.sync();
         __syncthreads();
     }
-
-    // int mm = min(m - blockIdx_x * M, M);
-    // int rowDataNum = (mm + blockDim_x - 1) / blockDim_x;
-    // for (int k = 0; k < rowDataNum; k++) {
-    //     if (i + k * blockDim_x < mm) {
-    //         A[blockIdx_x * M + i + k * blockDim_x + j * lda] =
-    //             work[i + k * blockDim_x + j * ldwork];
-    //         A[blockIdx_x * M + i + k * blockDim_x + (j + 16) * lda] =
-    //             work[i + k * blockDim_x + (j + 16) * ldwork];
-    //     }
-    // }
 }
 
 // template __global__ void my_hou_kernel<float, 128, 32>(const int m, const int

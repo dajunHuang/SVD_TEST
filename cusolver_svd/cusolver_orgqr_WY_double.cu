@@ -11,8 +11,8 @@
 
 #include "cusolver_utils.h"
 
-#define NUM_WARPUP 2
-#define NUM_REPEAT 5
+#define NUM_WARPUP 20
+#define NUM_REPEAT 50
 
 void init_identity_matrix(std::vector<double> &A, size_t m, size_t n,
                           size_t lda) {
@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
     cublasHandle_t cublasH = NULL;
     cudaStream_t stream = NULL;
 
-    int m = 1024, n = 32;
+    int m = 13824, n = 32;
 
     if (argc >= 3) {
         m = atoi(argv[1]);

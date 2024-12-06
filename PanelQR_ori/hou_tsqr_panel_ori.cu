@@ -106,7 +106,7 @@ template void test_hou_tsqr_panel_ori<float>(long m, long n);
 template void test_hou_tsqr_panel_ori<double>(long m, long n);
 
 int main(int argc, char *argv[]) {
-    long m = 8192, n = 32, dataType = 2;
+    long m = 13824, n = 32, dataType = 2;
 
     if(argc >= 4)
     {
