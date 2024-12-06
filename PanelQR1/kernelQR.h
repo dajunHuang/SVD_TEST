@@ -97,6 +97,9 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
     // cg::grid_group grid = cg::this_grid();
 
     if (i == 0 && j == 0) {
+        if(blockIdx_x == 0) {
+            syncCounter = 0;
+        }
         idx = 0;
         shared_work_height[0] = m;
         // if (blockIdx_x == 0) {
@@ -269,9 +272,9 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                     // 3、u=u/sqrt(abs(u(1))),计算HouseHolder向量
                     scale = 1 / (sqrt(abs(AA[cols + cols * ldaa])));
 
-                    if(blockIdx_x == 7 && i == 0 && idx == 2 && cols == 0) {
-                       printf("scale: %9.3f\n", scale);
-                    }
+                    // if(blockIdx_x == 7 && i == 0 && idx == 2 && cols == 0) {
+                    //    printf("scale: %9.3f\n", scale);
+                    // }
 
 #pragma unroll
                     for (int k = 0; k < rowDataNum; k++) {
@@ -494,8 +497,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
             if (i == 0 && j == 0) {
                 atomicAdd((int *)&syncCounter, 1);
-                // printf("idx: %d blockIdx: %d Add syncCounter to %d
-                // (endBlockNum: %d)\n", idx, blockIdx_x, syncCounter,
+                // printf("idx: %d blockIdx: %d Add syncCounter to %d (endBlockNum: %d)\n", idx, blockIdx_x, syncCounter,
                 // endBlockNum);
             }
         }
@@ -576,8 +578,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                 __syncthreads();
                 if (i == 0 && j == 0) {
                     atomicAdd((int *)&syncCounter, -1);
-                    // printf("idx: %d blockIdx: %d Add syncCounter to %d
-                    // (endBlockNum: %d)\n", idx, blockIdx_x, syncCounter,
+                    // printf("idx: %d blockIdx: %d Add syncCounter to %d (endBlockNum: %d)\n", idx, blockIdx_x, syncCounter,
                     // endBlockNum);
                 }
                 while (syncCounter > endBlockNum + numBlocks) {
@@ -591,8 +592,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                 __syncthreads();
                 if (i == 0 && j == 0) {
                     atomicAdd((int *)&syncCounter, -1);
-                    // printf("idx: %d blockIdx: %d Add syncCounter to %d
-                    // (endBlockNum: %d)\n", idx, blockIdx_x, syncCounter,
+                    // printf("idx: %d blockIdx: %d Add syncCounter to %d (endBlockNum: %d)\n", idx, blockIdx_x, syncCounter,
                     // endBlockNum);
                 }
                 while (syncCounter > endBlockNum) {
@@ -626,8 +626,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                 __threadfence();
                 if (i == 0 && j == 0) {
                     atomicAdd((int *)&syncCounter, -2);
-                    // printf("idx: %d blockIdx: %d Add syncCounter to %d
-                    // (endBlockNum: %d)\n", idx, blockIdx_x, syncCounter,
+                    // printf("idx: %d blockIdx: %d Add syncCounter to %d (endBlockNum: %d)\n", idx, blockIdx_x, syncCounter,
                     // endBlockNum);
                 }
                 while (syncCounter > endBlockNum) {
