@@ -17,17 +17,6 @@ static __inline__ __device__ T warpAllReduceSum(T val) {
 __device__ void block_tcgemm(int mm, double *C, const int ldc, double *A,
                              const int lda, double *B, const int ldb,
                              int warp_liner_idx) {
-    // if(threadIdx.x == 0 && threadIdx.y == 0) {
-    //     for(int i = 0; i < 128; ++i) {
-    //         for(int j = 0; j < 32; ++j) {
-    //             double sum = 0;
-    //             for(int k = 0; k < 32; ++k) {
-    //                 sum += A[i + k * lda] * B[k + j * ldb];
-    //             }
-    //             C[i + j * ldc] = sum;
-    //         }
-    //     }
-    // }
     //const int warp_row_idx = warp_liner_idx % 8;
     //const int warp_col_idx = warp_liner_idx / 8;
     //const int rowGemmNum = 2;
@@ -524,7 +513,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
     __syncthreads();
 
-    // perform tensorcore gemm to obtain final Q
+    // perform gemm to obtain final Q
     while (idx >= 0) {
         int work_height = shared_work_height[idx];
         // int mm = min(work_height - blockIdx_x * M, M);
@@ -551,7 +540,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                 //             "blockidx = %d, gemm: shared_A[%d] * work[%d] -> shared_A[%d]\n", blockIdx_x, idx, blockIdx_x * N, idx);
                 // }
 
-                __syncthreads();
+                // __syncthreads();
 
                 // if(blockIdx_x == 0 && i == 0 && j == 0) {
                 //     printf("A\n");
@@ -595,6 +584,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                     // printf("idx: %d blockIdx: %d Add syncCounter to %d (endBlockNum: %d)\n", idx, blockIdx_x, syncCounter,
                     // endBlockNum);
                 }
+
                 while (syncCounter > endBlockNum) {
                     // printf("3 %d %d\n", syncCounter, endBlockNum);
                 }
