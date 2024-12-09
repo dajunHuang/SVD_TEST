@@ -19,3 +19,6 @@ mkl_svd/lapacke_dgbbrd
 ozimmu/ozimmu_test_double
 
 tcgemm/tcgemm_FP162FP32_float
+
+PanelQR_ori/hou_tsqr_panel
+PanelQR1/hou_tsqr_panel

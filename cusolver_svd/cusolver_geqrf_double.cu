@@ -11,8 +11,8 @@
 #include <algorithm>
 #include <iostream>
 
-#define NUM_WARPUP 2
-#define NUM_REPEAT 5
+#define NUM_WARPUP 20
+#define NUM_REPEAT 50
 
 template <typename T>
 void random_initialize_matrix(T* A, size_t m, size_t n, size_t lda,
@@ -21,7 +21,7 @@ void random_initialize_matrix(T* A, size_t m, size_t n, size_t lda,
     std::default_random_engine eng(seed);
     // The best way to verify is to use integer values.
     std::uniform_int_distribution<int> dis(0, 5);
-    // std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
+    // std::uniform_real_distribution<double> dis(-1.0f, 1.0f);
     auto const rand = [&dis, &eng]() { return dis(eng); };
     for (size_t j{0U}; j < n; ++j)
     {
@@ -48,24 +48,24 @@ int main(int argc, char *argv[]) {
     const int minmn = m >= n ? m : n;
     const int lda = m;  // lda >= m
 
-    std::vector<float> A(m * n, 0);
-    std::vector<float> A_from_gpu(m * n, 0);
-    std::vector<float> TAU_from_gpu(minmn, 0);
+    std::vector<double> A(m * n, 0);
+    std::vector<double> A_from_gpu(m * n, 0);
+    std::vector<double> TAU_from_gpu(minmn, 0);
 
     std::default_random_engine eng(0U);
     // std::uniform_int_distribution<int> dis(0, 5);
-    std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
+    std::uniform_real_distribution<double> dis(-1.0f, 1.0f);
     auto const rand = [&dis, &eng]() { return dis(eng); };
     std::generate(A.begin(), A.end(), rand);
 
     int info_gpu = 0;                                  /* host copy of error info */
 
-    float *d_A = nullptr;
-    float *d_TAU = nullptr;
+    double *d_A = nullptr;
+    double *d_TAU = nullptr;
     int *devInfo = nullptr;
 
     int lwork = 0; /* size of workspace */
-    float *d_work = nullptr;
+    double *d_work = nullptr;
 
     /* step 1: create cusolver handle, bind a stream */
     CUSOLVER_CHECK(cusolverDnCreate(&cusolverH));
@@ -76,17 +76,17 @@ int main(int argc, char *argv[]) {
     CUBLAS_CHECK(cublasSetStream(cublasH, stream));
 
     /* step 2: copy A to device */
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(float) * m * n));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_TAU), sizeof(float) * minmn));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(double) * m * n));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_TAU), sizeof(double) * minmn));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&devInfo), sizeof(int)));
-    CUDA_CHECK(cudaMemcpyAsync(d_A, A.data(), sizeof(float) * A.size(), cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(d_A, A.data(), sizeof(double) * A.size(), cudaMemcpyHostToDevice, stream));
 
     /* step 3: query working space of BRD */
-    CUSOLVER_CHECK(cusolverDnSgeqrf_bufferSize(cusolverH, m, n, d_A, lda, &lwork));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work), sizeof(float) * lwork));
+    CUSOLVER_CHECK(cusolverDnDgeqrf_bufferSize(cusolverH, m, n, d_A, lda, &lwork));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work), sizeof(double) * lwork));
 
-    cudaMemcpy(d_A, A.data(), sizeof(float) * A.size(), cudaMemcpyHostToDevice);
-    CUSOLVER_CHECK(cusolverDnSgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work, lwork, devInfo));
+    cudaMemcpy(d_A, A.data(), sizeof(double) * A.size(), cudaMemcpyHostToDevice);
+    CUSOLVER_CHECK(cusolverDnDgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work, lwork, devInfo));
 
     cudaEvent_t start, stop;
     float time = 0, temp_time = 0;
@@ -95,16 +95,16 @@ int main(int argc, char *argv[]) {
     CUDA_CHECK(cudaEventCreate(&stop));
     for(int i{0}; i < NUM_WARPUP; ++i)
     {
-        cudaMemcpy(d_A, A.data(), sizeof(float) * A.size(), cudaMemcpyHostToDevice);
-        CUSOLVER_CHECK(cusolverDnSgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work, lwork, devInfo));
+        cudaMemcpy(d_A, A.data(), sizeof(double) * A.size(), cudaMemcpyHostToDevice);
+        CUSOLVER_CHECK(cusolverDnDgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work, lwork, devInfo));
     }
     CUDA_CHECK(cudaStreamSynchronize(stream));
     for(int i{0}; i < NUM_REPEAT; ++i)
     {
-        CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(float) * A.size(), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(double) * A.size(), cudaMemcpyHostToDevice));
         CUDA_CHECK(cudaEventRecord(start, stream));
 
-        CUSOLVER_CHECK(cusolverDnSgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work, lwork, devInfo));
+        CUSOLVER_CHECK(cusolverDnDgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work, lwork, devInfo));
 
         CUDA_CHECK(cudaEventRecord(stop, stream));
         CUDA_CHECK(cudaEventSynchronize(stop));
@@ -114,8 +114,8 @@ int main(int argc, char *argv[]) {
     }
     time /= NUM_REPEAT;
 
-    CUDA_CHECK(cudaMemcpyAsync(A_from_gpu.data(), d_A, sizeof(float) * A_from_gpu.size(), cudaMemcpyDeviceToHost, stream));
-    CUDA_CHECK(cudaMemcpyAsync(TAU_from_gpu.data(), d_TAU, sizeof(float) * TAU_from_gpu.size(), cudaMemcpyDeviceToHost, stream));
+    CUDA_CHECK(cudaMemcpyAsync(A_from_gpu.data(), d_A, sizeof(double) * A_from_gpu.size(), cudaMemcpyDeviceToHost, stream));
+    CUDA_CHECK(cudaMemcpyAsync(TAU_from_gpu.data(), d_TAU, sizeof(double) * TAU_from_gpu.size(), cudaMemcpyDeviceToHost, stream));
     CUDA_CHECK(cudaMemcpyAsync(&info_gpu, devInfo, sizeof(int), cudaMemcpyDeviceToHost, stream));
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -130,7 +130,7 @@ int main(int argc, char *argv[]) {
     //     std::printf("WARNING: info = %d : gesvd does not converge \n", info_gpu);
     // }
 
-    std::cout << "Cusolver QRF (float) Latency: " << time << " ms" << std::endl;
+    std::cout << "Cusolver QRF (double) Latency: " << time << " ms" << std::endl;
 
     /* free resources */
     CUDA_CHECK(cudaFree(d_A));

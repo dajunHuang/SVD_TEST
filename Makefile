@@ -17,3 +17,5 @@ clean:
 	make -C mkl_svd clean
 	make -C ozimmu clean
 	make -C tcgemm clean
+	make -C PanelQR_ori clean
+	make -C PanelQR1 clean

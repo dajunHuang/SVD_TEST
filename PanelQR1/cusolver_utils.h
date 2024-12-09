@@ -40,6 +40,7 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <cassert>
 
 // CUDA API error checking
 #define CUDA_CHECK(err)                                                      \
