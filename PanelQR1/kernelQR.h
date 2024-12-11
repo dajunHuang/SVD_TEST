@@ -14,9 +14,8 @@ static __inline__ __device__ T warp_all_reduce_sum(T val) {
     return val;
 }
 
-__device__ void block_tcgemm(int block_data_height, double *C, const int ldc,
-                             double *A, const int lda, double *B,
-                             const int ldb) {
+__device__ void block_gemm(int m, int n, double *C, const int ldc, double *A,
+                           const int lda, double *B, const int ldb) {
     // const int warp_row_idx = warp_liner_idx % 8;
     // const int warp_col_idx = warp_liner_idx / 8;
     // const int rowGemmNum = 2;
@@ -51,37 +50,43 @@ __device__ void block_tcgemm(int block_data_height, double *C, const int ldc,
     //                 nvcuda::wmma::mem_col_major);
     //     }
     // }
-    const int rowNum = 4, colNum = 2;
-    for (int thread_idx_x = 0; thread_idx_x < rowNum; ++thread_idx_x) {
-        if (thread_idx_x * 32 + threadIdx.x >= block_data_height) break;
-        for (int thread_idx_y = 0; thread_idx_y < colNum; ++thread_idx_y) {
+    const int block_dim_x = blockDim.x, block_dim_y = blockDim.y;
+    const int thread_idx_x = threadIdx.x, thread_idx_y = threadIdx.y;
+    const int num_row = (m + block_dim_x - 1) / block_dim_x;
+    const int num_col = (n + block_dim_y - 1) / block_dim_y;
+    for (int row_repeat_idx = 0; row_repeat_idx < num_row; ++row_repeat_idx) {
+        int row_idx = row_repeat_idx * block_dim_x + thread_idx_x;
+        if (row_idx >= m) break;
+        for (int col_repeat_idx = 0; col_repeat_idx < num_col;
+             ++col_repeat_idx) {
+            int col_idx = col_repeat_idx * block_dim_y + thread_idx_y;
+            if (col_idx >= n) break;
             double sum = 0;
-            for (int k = 0; k < 32; ++k) {
-                sum += A[thread_idx_x * 32 + threadIdx.x + k * lda] *
-                       B[k + (thread_idx_y * 16 + threadIdx.y) * ldb];
+            for (int k = 0; k < n; ++k) {
+                sum += A[row_idx + k * lda] * B[k + col_idx * ldb];
             }
-            C[thread_idx_x * 32 + threadIdx.x +
-              (thread_idx_y * 16 + threadIdx.y) * ldc] = sum;
+            C[row_idx + col_idx * ldc] = sum;
         }
     }
 }
 
 __device__ volatile int sync_counter = 0;
 
-template <typename T, int BLCOK_SIZE_X>
-__global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
-                              T *R, const int ldr, T *work, const int ldwork) {
+template <typename T>
+__global__ void my_hou_kernel(const int block_size, const int m, const int n,
+                              T *A, const int lda, T *R, const int ldr, T *work,
+                              const int ldwork) {
     // 创建shared memory，让整个block的线程能够进行数据共享
     extern __shared__ T all_shared_A[];
     __shared__ T RR[128];                       // n <= 128
     __shared__ int shared_all_data_height[16];  // reduction_time < 16
     __shared__ int reduction_time;
 
-    const int thread_idx_x = static_cast<int>(threadIdx.x);
-    const int thread_idx_y = static_cast<int>(threadIdx.y);
-    const int block_idx_x = static_cast<int>(blockIdx.x);
-    const int block_dim_x = static_cast<int>(blockDim.x);
-    const int block_dim_y = static_cast<int>(blockDim.y);
+    const int thread_idx_x = threadIdx.x;
+    const int thread_idx_y = threadIdx.y;
+    const int block_idx_x = blockIdx.x;
+    const int block_dim_x = blockDim.x;
+    const int block_dim_y = blockDim.y;
 
     if (thread_idx_x == 0 && thread_idx_y == 0) {
         if (block_idx_x == 0) {
@@ -97,17 +102,16 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
     __syncthreads();
 
-    const int ldsa = BLCOK_SIZE_X;
+    const int ldsa = block_size;
     int num_reduction_block = 0;
     int count_end_block = 0;
 
     while (shared_all_data_height[reduction_time] > n) {
         int all_data_height = shared_all_data_height[reduction_time];
         int block_data_height =
-            min(all_data_height - block_idx_x * BLCOK_SIZE_X, BLCOK_SIZE_X);
+            min(all_data_height - block_idx_x * block_size, block_size);
 
-        num_reduction_block =
-            (all_data_height + BLCOK_SIZE_X - 1) / BLCOK_SIZE_X;
+        num_reduction_block = (all_data_height + block_size - 1) / block_size;
         count_end_block += num_reduction_block;
 
         // if(block_idx_x == 1 && thread_idx_x == 0 && thread_idx_y == 0) {
@@ -130,14 +134,14 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
             T *shared_A = &all_shared_A[reduction_time * n * ldsa];
 
             for (int k = 0; k < num_data_row; k++) {
-                if (thread_idx_x + k * block_dim_x < block_data_height) {
+                int row_idx = thread_idx_x + k * block_dim_x;
+                if (row_idx < block_data_height) {
                     for (int h = 0; h < num_data_col; ++h) {
-                        if (thread_idx_y + h * block_dim_y < n) {
-                            shared_A[thread_idx_x + k * block_dim_x +
-                                     (thread_idx_y + h * block_dim_y) * ldsa] =
-                                A[block_idx_x * BLCOK_SIZE_X + thread_idx_x +
-                                  k * block_dim_x +
-                                  (thread_idx_y + h * block_dim_y) * lda];
+                        int col_idx = thread_idx_y + h * block_dim_y;
+                        if (col_idx < n) {
+                            shared_A[row_idx + col_idx * ldsa] =
+                                A[block_idx_x * block_size + row_idx +
+                                  col_idx * lda];
                         }
                     }
                 }
@@ -145,7 +149,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
             __syncthreads();
             // if (block_idx_x == 7 && thread_idx_x == 0 && thread_idx_y == 0) {
             //     printf("load from A[%d][%d] to shared_A[0]\n",
-            //             block_idx_x * BLCOK_SIZE_X, 0);
+            //             block_idx_x * block_size, 0);
             //     for (int v = 0; v < block_data_height; v++) {
             //         for (int l = 0; l < 32; l++) {
             //             printf("%9.6f ", shared_A[v + l *
@@ -172,15 +176,11 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 #pragma unroll
                     for (int k = 0; k < num_data_row; k++) {
                         accumulate[k] = 0.0;
+                        int row_idx = thread_idx_x + k * block_dim_x;
                         // if条件中，前部部分是为了防止最后一个block中线程行越界；后半部分在计算HouseHolder向量是只计算对角线一下的元素
-                        if (thread_idx_x + k * block_dim_x <
-                                block_data_height &&
-                            thread_idx_x + k * block_dim_x >= cols) {
-                            accumulate[k] =
-                                shared_A[thread_idx_x + k * block_dim_x +
-                                         cols * ldsa] *
-                                shared_A[thread_idx_x + k * block_dim_x +
-                                         cols * ldsa];
+                        if (row_idx < block_data_height && row_idx >= cols) {
+                            accumulate[k] = shared_A[row_idx + cols * ldsa] *
+                                            shared_A[row_idx + cols * ldsa];
                         }
                         nu += accumulate[k];
                     }
@@ -208,11 +208,9 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
 #pragma unroll
                     for (int k = 0; k < num_data_row; k++) {
-                        if (thread_idx_x + k * block_dim_x <
-                                block_data_height &&
-                            thread_idx_x + k * block_dim_x >= cols) {
-                            shared_A[thread_idx_x + k * block_dim_x +
-                                     cols * ldsa] *= scale;
+                        int row_idx = thread_idx_x + k * block_dim_x;
+                        if (row_idx < block_data_height && row_idx >= cols) {
+                            shared_A[row_idx + cols * ldsa] *= scale;
                         }
                     }
                     __syncwarp();
@@ -230,7 +228,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
                     // 2、求u(1)= u(1)+sign(u(1)); 每列找一个线程;来计算即可
                     if (0 == thread_idx_x) {
-                        T u1 = shared_A[cols + cols * block_data_height];
+                        T u1 = shared_A[cols + cols * ldsa];
                         shared_A[cols + cols * ldsa] += (u1 >= 0) ? 1 : -1;
                         // // 把normx存放到RR中，也就是对角线的元素
                         RR[cols] = (u1 >= 0) ? -norm_x : norm_x;
@@ -258,11 +256,9 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
 #pragma unroll
                     for (int k = 0; k < num_data_row; k++) {
-                        if (thread_idx_x + k * block_dim_x <
-                                block_data_height &&
-                            thread_idx_x + k * block_dim_x >= cols) {
-                            shared_A[thread_idx_x + k * block_dim_x +
-                                     cols * ldsa] *= scale;
+                        int row_idx = thread_idx_x + k * block_dim_x;
+                        if (row_idx < block_data_height && row_idx >= cols) {
+                            shared_A[row_idx + cols * ldsa] *= scale;
                         }
                     }
 
@@ -292,15 +288,13 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 #pragma unroll
                         for (int k = 0; k < num_data_row; k++) {
                             accumulate[k] = 0.0;
+                            int row_idx = thread_idx_x + k * block_dim_x;
                             // if条件中，前部部分是为了防止最后一个block中线程行越界；后半部分在计算HouseHolder向量是只计算对角线一下的元素
-                            if (thread_idx_x + k * block_dim_x <
-                                    block_data_height &&
-                                thread_idx_x + k * block_dim_x >= cols) {
+                            if (row_idx < block_data_height &&
+                                row_idx >= cols) {
                                 accumulate[k] =
-                                    shared_A[thread_idx_x + k * block_dim_x +
-                                             cols * ldsa] *
-                                    shared_A[thread_idx_x + k * block_dim_x +
-                                             opCols * ldsa];
+                                    shared_A[row_idx + cols * ldsa] *
+                                    shared_A[row_idx + opCols * ldsa];
                             }
                             nu += accumulate[k];
                         }
@@ -313,15 +307,12 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                         // 计算x-uu'x
 #pragma unroll
                         for (int k = 0; k < num_data_row; k++) {
+                            int row_idx = thread_idx_x + k * block_dim_x;
                             // if条件中，前部部分是为了防止最后一个block中线程行越界；后半部分在计算HouseHolder向量是只计算对角线一下的元素
-                            if (thread_idx_x + k * block_dim_x <
-                                    block_data_height &&
-                                thread_idx_x + k * block_dim_x >= cols) {
-                                shared_A[thread_idx_x + k * block_dim_x +
-                                         opCols * ldsa] -=
-                                    utx *
-                                    shared_A[thread_idx_x + k * block_dim_x +
-                                             cols * ldsa];
+                            if (row_idx < block_data_height &&
+                                row_idx >= cols) {
+                                shared_A[row_idx + opCols * ldsa] -=
+                                    utx * shared_A[row_idx + cols * ldsa];
                                 // if(reduction_time == 2 && block_idx_x == 7 &&
                                 // opCols == 1){
                                 //     printf("update A[%d][%d] to %9.6f\n",
@@ -361,7 +352,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
             T *R_to;
             int ldr_to;
-            if (all_data_height <= BLCOK_SIZE_X) {
+            if (all_data_height <= block_size) {
                 R_to = R;
                 ldr_to = ldr;
             } else {
@@ -379,15 +370,13 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                 if (opCols >= n) continue;
 #pragma unroll
                 for (int k = 0; k < num_r_data_row; k++) {
-                    if (thread_idx_x + k * block_dim_x < opCols) {
-                        R_to[thread_idx_x + k * block_dim_x + opCols * ldr_to] =
-                            shared_A[thread_idx_x + k * block_dim_x +
-                                     opCols * ldsa];
-                        shared_A[thread_idx_x + k * block_dim_x +
-                                 opCols * ldsa] = 0.0;
-                    } else if (thread_idx_x + k * block_dim_x > opCols) {
-                        R_to[thread_idx_x + k * block_dim_x + opCols * ldr_to] =
-                            0.0;
+                    int row_idx = thread_idx_x + k * block_dim_x;
+                    if (row_idx < opCols) {
+                        R_to[row_idx + opCols * ldr_to] =
+                            shared_A[row_idx + opCols * ldsa];
+                        shared_A[row_idx + opCols * ldsa] = 0.0;
+                    } else if (row_idx > opCols) {
+                        R_to[row_idx + opCols * ldr_to] = 0.0;
                     } else {
                         // 这个赋值完全可以放到上面RR的赋值哪儿，从而不需要RR的共享内存
                         R_to[opCols + opCols * ldr_to] = RR[opCols];
@@ -398,7 +387,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
             __syncthreads();
 
             // if (block_idx_x == 7 && thread_idx_x == 0 && thread_idx_y == 0) {
-            //     if (all_data_height <= BLCOK_SIZE_X) {
+            //     if (all_data_height <= block_size) {
             //         printf("save to R\n");
             //     } else {
             //      printf("save to work[%d][%d]\n", block_idx_x * n, 0);
@@ -423,7 +412,8 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                 if (opCols >= n) continue;
 
                 for (int k = 0; k < num_data_row; k++) {
-                    if (thread_idx_x + k * block_dim_x == opCols) {
+                    int row_idx = thread_idx_x + k * block_dim_x;
+                    if (row_idx == opCols) {
                         q_per_thread[k + h * 4] = 1.0;
                     } else {
                         q_per_thread[k + h * 4] = 0.0;
@@ -441,11 +431,10 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                         T nu = 0.0;
                         for (int k = 0; k < num_data_row; k++) {
                             accumulate[k] = 0.0;
-                            if (thread_idx_x + k * block_dim_x <
-                                block_data_height) {
+                            int row_idx = thread_idx_x + k * block_dim_x;
+                            if (row_idx < block_data_height) {
                                 accumulate[k] =
-                                    shared_A[thread_idx_x + k * block_dim_x +
-                                             cols * ldsa] *
+                                    shared_A[row_idx + cols * ldsa] *
                                     q_per_thread[k + h * 4];
                             }
                             nu += accumulate[k];
@@ -455,12 +444,10 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
                         // 3.计算q-uu'q_per_thread
                         for (int k = 0; k < num_data_row; k++) {
-                            if (thread_idx_x + k * block_dim_x <
-                                block_data_height) {
+                            int row_idx = thread_idx_x + k * block_dim_x;
+                            if (row_idx < block_data_height) {
                                 q_per_thread[k + h * 4] -=
-                                    utq *
-                                    shared_A[thread_idx_x + k * block_dim_x +
-                                             cols * ldsa];
+                                    utq * shared_A[row_idx + cols * ldsa];
                             }
                         }
 
@@ -472,11 +459,12 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
             __syncthreads();
 
             for (int k = 0; k < num_data_row; k++) {
-                if (thread_idx_x + k * block_dim_x < block_data_height) {
+                int row_idx = thread_idx_x + k * block_dim_x;
+                if (row_idx < block_data_height) {
                     for (int h = 0; h < num_data_col; h++) {
-                        if (thread_idx_y + h * block_dim_y < n) {
-                            shared_A[thread_idx_x + k * block_dim_x +
-                                     (thread_idx_y + h * block_dim_y) * ldsa] =
+                        int col_idx = thread_idx_y + h * block_dim_y;
+                        if (col_idx < n) {
+                            shared_A[row_idx + col_idx * ldsa] =
                                 q_per_thread[k + h * 4];
                         }
                     }
@@ -512,7 +500,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
         if (thread_idx_x == 0 && thread_idx_y == 0) {
             all_data_height =
-                ((all_data_height + BLCOK_SIZE_X - 1) / BLCOK_SIZE_X) * n;
+                ((all_data_height + block_size - 1) / block_size) * n;
             shared_all_data_height[++reduction_time] = all_data_height;
             // if (block_idx_x == 0) {
             //     printf("shared_all_data_height[%d] = %d\n", reduction_time,
@@ -533,13 +521,12 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
     while (reduction_time >= 0) {
         int all_data_height = shared_all_data_height[reduction_time];
         int block_data_height =
-            min(all_data_height - block_idx_x * BLCOK_SIZE_X, BLCOK_SIZE_X);
+            min(all_data_height - block_idx_x * block_size, block_size);
         // int block_data_height = ((all_data_height - block_idx_x *
-        // BLCOK_SIZE_X) < BLCOK_SIZE_X) ? (all_data_height - block_idx_x *
-        // BLCOK_SIZE_X) : BLCOK_SIZE_X;
+        // block_size) < block_size) ? (all_data_height - block_idx_x *
+        // block_size) : block_size;
 
-        num_reduction_block =
-            (all_data_height + BLCOK_SIZE_X - 1) / BLCOK_SIZE_X;
+        num_reduction_block = (all_data_height + block_size - 1) / block_size;
         count_end_block = count_end_block - num_reduction_block * 2;
 
         if (block_data_height > 0) {
@@ -554,11 +541,12 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 
             T *q_next = &A[block_idx_x * n];
             T *q_this = &all_shared_A[reduction_time * n * ldsa];
-            T *q_to = &A[block_idx_x * BLCOK_SIZE_X];
+            T *q_to = &A[block_idx_x * block_size];
             T *q_work =
-                &work[block_idx_x * BLCOK_SIZE_X];  // may able to remove q_work and work
+                &work[block_idx_x *
+                      block_size];  // may able to remove q_work and work
 
-            if (all_data_height > BLCOK_SIZE_X) {
+            if (all_data_height > block_size) {
                 // if (thread_idx_x == 0 && thread_idx_y == 0) {
                 //     printf(
                 //             "blockidx = %d, gemm: shared_A[%d] * work[%d] ->
@@ -603,8 +591,8 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                     // printf("2 %d %d\n", sync_counter, count_end_block);
                 }
 
-                block_tcgemm(block_data_height, q_work, ldwork, q_this, ldsa,
-                             q_next, lda);
+                block_gemm(block_data_height, n, q_work, ldwork, q_this, ldsa,
+                           q_next, lda);
 
                 __threadfence();
                 __syncthreads();
@@ -661,7 +649,7 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
                 // if (thread_idx_x == 0 && thread_idx_y == 0) {
                 //     printf("blockidx = %d, move shared_A[%d] -> work[%d]\n",
                 //            block_idx_x, reduction_time, block_idx_x *
-                //            BLCOK_SIZE_X);
+                //            block_size);
                 // }
                 for (int row_load_idx = 0; row_load_idx < num_data_row;
                      row_load_idx++) {
@@ -700,8 +688,8 @@ __global__ void my_hou_kernel(const int m, const int n, T *A, const int lda,
 //         float *R, const int ldr,
 //         float *work,
 //         const int ldwork);
-template __global__ void my_hou_kernel<double, 128>(const int m, const int n,
-                                                    double *A, const int lda,
-                                                    double *R, const int ldr,
-                                                    double *work,
-                                                    const int ldwork);
+template __global__ void my_hou_kernel<double>(const int block_size,
+                                               const int m, const int n,
+                                               double *A, const int lda,
+                                               double *R, const int ldr,
+                                               double *work, const int ldwork);

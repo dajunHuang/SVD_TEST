@@ -10,14 +10,14 @@
 
 // 注意M必须<=256,N必须<=32
 // 另外n必须<=N
-template <typename T, int BLCOK_SIZE_X>
-void hou_tsqr_panel(cublasHandle_t cublas_handle, int m, int n, T *A, int lda,
+template <typename T>
+void hou_tsqr_panel(cublasHandle_t cublas_handle, int block_size, int m, int n, T *A, int lda,
                     T *R, int ldr, T *work, int lwork) {
-    int reduction_time = ceil((log(m) - log(n)) / (log(BLCOK_SIZE_X) - log(n)));
+    int reduction_time = ceil((log(m) - log(n)) / (log(block_size) - log(n)));
     // printf("size %d, reduction_time: %d\n", m, reduction_time);
-    int share_memory_size = reduction_time * BLCOK_SIZE_X * n * sizeof(T);
+    int share_memory_size = reduction_time * block_size * n * sizeof(T);
 
-    CUDA_CHECK(cudaFuncSetAttribute(my_hou_kernel<T, BLCOK_SIZE_X>,
+    CUDA_CHECK(cudaFuncSetAttribute(my_hou_kernel<T>,
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     share_memory_size));
 
@@ -32,21 +32,17 @@ void hou_tsqr_panel(cublasHandle_t cublas_handle, int m, int n, T *A, int lda,
     // cudaLaunchCooperativeKernel((void*)my_hou_kernel<T, M, N>, blockNum,
     // blockDim, kernelArgs, share_memory_size);
 
-    assert(BLCOK_SIZE_X % n == 0);
-    assert((m % BLCOK_SIZE_X) % n == 0);
+    assert(block_size % n == 0);
+    assert((m % block_size) % n == 0);
     assert(reduction_time < 16);
     assert(n <= 128);
 
-    dim3 block_dim(32, 16);
-    int block_num = (m + BLCOK_SIZE_X - 1) / BLCOK_SIZE_X;
-    my_hou_kernel<T, BLCOK_SIZE_X><<<block_num, block_dim, share_memory_size>>>(
-        m, n, A, lda, R, ldr, work, lwork);
+    dim3 block_dim(32, 32);
+    int block_num = (m + block_size - 1) / block_size;
+    my_hou_kernel<T><<<block_num, block_dim, share_memory_size>>>(
+        block_size, m, n, A, lda, R, ldr, work, lwork);
 }
 
-// template void hou_tsqr_panel<float, 128, 32>(cublasHandle_t cublas_handle,
-//                                              int m, int n, float *A, int lda,
-//                                              float *R, int ldr, float *work,
-//                                              int lwork);
-template void hou_tsqr_panel<double, 128>(cublasHandle_t cublas_handle, int m,
+template void hou_tsqr_panel<double>(cublasHandle_t cublas_handle, int block_size, int m,
                                           int n, double *A, int lda, double *R,
                                           int ldr, double *work, int lwork);
