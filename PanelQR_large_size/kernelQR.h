@@ -129,7 +129,7 @@ __global__ void my_hou_kernel(const int block_size, const int m, const int n,
             int num_data_row =
                 (block_data_height + block_dim_x - 1) / block_dim_x;
             int num_data_col = (n + block_dim_y - 1) / block_dim_y;
-            T accumulate[4], q_per_thread[8];  // 128 / 32 * 2 = 8
+            T acc_per_thread[4], q_per_thread[4];
 
             T *shared_A = &all_shared_A[reduction_time * n * ldsa];
 
@@ -175,14 +175,15 @@ __global__ void my_hou_kernel(const int block_size, const int m, const int n,
                     // 是将下面的循环体进行展开，提高效率，所以需要acc[dataNum]
 #pragma unroll
                     for (int k = 0; k < num_data_row; k++) {
-                        accumulate[k] = 0.0;
+                        acc_per_thread[k] = 0.0;
                         int row_idx = thread_idx_x + k * block_dim_x;
                         // if条件中，前部部分是为了防止最后一个block中线程行越界；后半部分在计算HouseHolder向量是只计算对角线一下的元素
                         if (row_idx < block_data_height && row_idx >= cols) {
-                            accumulate[k] = shared_A[row_idx + cols * ldsa] *
-                                            shared_A[row_idx + cols * ldsa];
+                            acc_per_thread[k] =
+                                shared_A[row_idx + cols * ldsa] *
+                                shared_A[row_idx + cols * ldsa];
                         }
-                        nu += accumulate[k];
+                        nu += acc_per_thread[k];
                     }
 
                     // if(block_idx_x == 7 && reduction_time == 2 && cols == 0)
@@ -287,16 +288,16 @@ __global__ void my_hou_kernel(const int block_size, const int m, const int n,
                         // 先计算u'x
 #pragma unroll
                         for (int k = 0; k < num_data_row; k++) {
-                            accumulate[k] = 0.0;
+                            acc_per_thread[k] = 0.0;
                             int row_idx = thread_idx_x + k * block_dim_x;
                             // if条件中，前部部分是为了防止最后一个block中线程行越界；后半部分在计算HouseHolder向量是只计算对角线一下的元素
                             if (row_idx < block_data_height &&
                                 row_idx >= cols) {
-                                accumulate[k] =
+                                acc_per_thread[k] =
                                     shared_A[row_idx + cols * ldsa] *
                                     shared_A[row_idx + opCols * ldsa];
                             }
-                            nu += accumulate[k];
+                            nu += acc_per_thread[k];
                         }
                         T utx = warp_all_reduce_sum(nu);
 
@@ -430,14 +431,14 @@ __global__ void my_hou_kernel(const int block_size, const int m, const int n,
                         // 2、计算u'q_per_thread
                         T nu = 0.0;
                         for (int k = 0; k < num_data_row; k++) {
-                            accumulate[k] = 0.0;
+                            acc_per_thread[k] = 0.0;
                             int row_idx = thread_idx_x + k * block_dim_x;
                             if (row_idx < block_data_height) {
-                                accumulate[k] =
+                                acc_per_thread[k] =
                                     shared_A[row_idx + cols * ldsa] *
                                     q_per_thread[k + h * 4];
                             }
-                            nu += accumulate[k];
+                            nu += acc_per_thread[k];
                         }
 
                         T utq = warp_all_reduce_sum(nu);
