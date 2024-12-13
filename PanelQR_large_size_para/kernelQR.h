@@ -36,7 +36,6 @@ __device__ void block_gemm(int m, int n, T *C, const int ldc, T *A,
         }
     }
 }
-
 template __device__ void block_gemm<double>(int m, int n, double *C,
                                             const int ldc, double *A,
                                             const int lda, double *B,
@@ -54,13 +53,15 @@ __device__ void qr_kernel(const int m, const int n, T *A, const int lda, T *Q,
     int num_data_col = (n + block_dim_y - 1) / block_dim_y;
     T acc_per_thread[4], q_per_thread[4];
 
-    for (int k = 0; k < num_data_row; k++) {
-        int row_idx = thread_idx_x + k * block_dim_x;
-        if (row_idx < m) {
-            for (int h = 0; h < num_data_col; ++h) {
-                int col_idx = thread_idx_y + h * block_dim_y;
-                if (col_idx < n) {
-                    Q[row_idx + col_idx * ldq] = A[row_idx + col_idx * lda];
+    if(A != Q) {
+        for (int k = 0; k < num_data_row; k++) {
+            int row_idx = thread_idx_x + k * block_dim_x;
+            if (row_idx < m) {
+                for (int h = 0; h < num_data_col; ++h) {
+                    int col_idx = thread_idx_y + h * block_dim_y;
+                    if (col_idx < n) {
+                        Q[row_idx + col_idx * ldq] = A[row_idx + col_idx * lda];
+                    }
                 }
             }
         }
@@ -274,7 +275,7 @@ __global__ void householder_kernel(const int block_size, const int m,
                                    const int ldr, T *work, const int ldwork) {
     // 创建shared memory，让整个block的线程能够进行数据共享
     extern __shared__ T all_shared_A[];
-    __shared__ T RR[128];                       // n <= 128
+    __shared__ T shared_RR[128];                       // n <= 128
     __shared__ int shared_all_data_height[16];  // reduction_time < 16
     __shared__ int reduction_time;
 
@@ -292,7 +293,7 @@ __global__ void householder_kernel(const int block_size, const int m,
         shared_all_data_height[0] = m;
         // if (block_idx_x == 0) {
         //     printf("shared_all_data_height[%d] = %d\n", reduction_time,
-        //     static_cast<int>(m));
+        //     m);
         // }
     }
 
@@ -324,19 +325,16 @@ __global__ void householder_kernel(const int block_size, const int m,
             }
 
             qr_kernel(block_data_height, n, A_from, lda_from, Q_to, ldq_to,
-                      R_to, ldr_to, RR);
+                      R_to, ldr_to, shared_RR);
 
+            __threadfence();
+            __syncthreads();
             if (thread_idx_x == 0 && thread_idx_y == 0) {
                 atomicAdd((int *)&sync_counter, 1);
-                // printf("reduction_time: %d blockIdx: %d Add sync_counter to
-                // %d (count_end_block: %d)\n", reduction_time, block_idx_x,
-                // sync_counter, count_end_block);
             }
         }
 
-        while (sync_counter < count_end_block) {
-            // printf("1 %d %d\n", sync_counter, count_end_block);
-        }
+        while (sync_counter < count_end_block) { }
 
         if (thread_idx_x == 0 && thread_idx_y == 0) {
             all_data_height =
@@ -385,9 +383,8 @@ __global__ void householder_kernel(const int block_size, const int m,
                 if (thread_idx_x == 0 && thread_idx_y == 0) {
                     atomicAdd((int *)&sync_counter, -1);
                 }
-                while (sync_counter > count_end_block + num_reduction_block) {
-                    // printf("2 %d %d\n", sync_counter, count_end_block);
-                }
+
+                while (sync_counter > count_end_block + num_reduction_block) { }
 
                 block_gemm(block_data_height, n, q_work, ldwork, q_this, ldsa,
                            q_next, lda);
@@ -398,9 +395,7 @@ __global__ void householder_kernel(const int block_size, const int m,
                     atomicAdd((int *)&sync_counter, -1);
                 }
 
-                while (sync_counter > count_end_block) {
-                    // printf("3 %d %d\n", sync_counter, count_end_block);
-                }
+                while (sync_counter > count_end_block) { }
 
                 for (int row_load_idx = 0; row_load_idx < num_data_row;
                      row_load_idx++) {
@@ -421,19 +416,9 @@ __global__ void householder_kernel(const int block_size, const int m,
                 __threadfence();
                 if (thread_idx_x == 0 && thread_idx_y == 0) {
                     atomicAdd((int *)&sync_counter, -2);
-                    // printf("reduction_time: %d blockIdx: %d Add sync_counter
-                    // to %d (count_end_block: %d)\n", reduction_time,
-                    // block_idx_x, sync_counter, count_end_block);
                 }
-                while (sync_counter > count_end_block) {
-                    // printf("4 %d %d\n", sync_counter, count_end_block);
-                }
+                while (sync_counter > count_end_block) {}
 
-                // if (thread_idx_x == 0 && thread_idx_y == 0) {
-                //     printf("blockidx = %d, move shared_A[%d] -> work[%d]\n",
-                //            block_idx_x, reduction_time, block_idx_x *
-                //            block_size);
-                // }
                 for (int row_load_idx = 0; row_load_idx < num_data_row;
                      row_load_idx++) {
                     int row_idx = thread_idx_x + row_load_idx * block_dim_x;

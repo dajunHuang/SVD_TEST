@@ -44,7 +44,7 @@ int main(int argc, char *argv[]) {
     const int ldr = n;
     const int ldq = m;
     int lwork = 0; /* size of workspace */
-    int ldworkw = 0;
+    // int ldworkw = 0;
 
     std::vector<double> A(m * n, 0);
     std::vector<double> Q(m * m, 0);
@@ -102,10 +102,10 @@ int main(int argc, char *argv[]) {
         cusolverDnDgeqrf_bufferSize(cusolverH, m, n, d_A, lda, &lwork));
     CUDA_CHECK(
         cudaMalloc(reinterpret_cast<void **>(&d_work), sizeof(double) * lwork));
-    CUSOLVER_CHECK(
-        cusolverDnDorgqr_bufferSize(cusolverH, m, n, n, d_A, lda, d_TAU, &ldworkw));
-    CUDA_CHECK(
-        cudaMalloc(reinterpret_cast<void **>(&d_work_w), sizeof(double) * ldworkw));
+    // CUSOLVER_CHECK(
+    //     cusolverDnDorgqr_bufferSize(cusolverH, m, n, n, d_A, lda, d_TAU, &ldworkw));
+    // CUDA_CHECK(
+    //     cudaMalloc(reinterpret_cast<void **>(&d_work_w), sizeof(double) * ldworkw));
 
     CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(double) * A.size(),
                           cudaMemcpyHostToDevice));
@@ -113,12 +113,12 @@ int main(int argc, char *argv[]) {
                           cudaMemcpyHostToDevice));
     CUSOLVER_CHECK(cusolverDnDgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work,
                                     lwork, devInfo));
-    launchKernel_moveU({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
-                       d_A, lda, d_R, ldr);
-    launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
-                           d_A, lda, d_Y, ldy);
-    CUSOLVER_CHECK(cusolverDnDorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
-                                    ldworkw, devInfo));
+    // launchKernel_moveU({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+    //                    d_A, lda, d_R, ldr);
+    // launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+    //                        d_A, lda, d_Y, ldy);
+    // CUSOLVER_CHECK(cusolverDnDorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
+    //                                 ldworkw, devInfo));
                                 
     cudaEvent_t start, stop;
     float time = 0, temp_time = 0;
@@ -133,12 +133,12 @@ int main(int argc, char *argv[]) {
                             cudaMemcpyHostToDevice));
         CUSOLVER_CHECK(cusolverDnDgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work,
                                         lwork, devInfo));
-        launchKernel_moveU({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
-                        d_A, lda, d_R, ldr);
-        launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
-                            d_A, lda, d_Y, ldy);
-        CUSOLVER_CHECK(cusolverDnDorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
-                                        ldworkw, devInfo1));
+        // launchKernel_moveU({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+        //                 d_A, lda, d_R, ldr);
+        // launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+        //                     d_A, lda, d_Y, ldy);
+        // CUSOLVER_CHECK(cusolverDnDorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
+        //                                 ldworkw, devInfo1));
     }
     CUDA_CHECK(cudaStreamSynchronize(stream));
     for(int i{0}; i < NUM_REPEAT; ++i)
@@ -151,12 +151,12 @@ int main(int argc, char *argv[]) {
 
         CUSOLVER_CHECK(cusolverDnDgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work,
                                         lwork, devInfo));
-        launchKernel_moveU({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
-                        d_A, lda, d_R, ldr);
-        launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
-                            d_A, lda, d_Y, ldy);                                       
-        CUSOLVER_CHECK(cusolverDnDorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
-                                        ldworkw, devInfo1));
+        // launchKernel_moveU({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+        //                 d_A, lda, d_R, ldr);
+        // launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+        //                     d_A, lda, d_Y, ldy);                                       
+        // CUSOLVER_CHECK(cusolverDnDorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
+        //                                 ldworkw, devInfo1));
 
         CUDA_CHECK(cudaEventRecord(stop, stream));
         CUDA_CHECK(cudaEventSynchronize(stop));

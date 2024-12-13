@@ -36,8 +36,7 @@ void test_tsqr(int block_size, int m, int n) {
 
     T *d_A = nullptr;
     T *d_R = nullptr;
-    T *d_work = nullptr;
-    T *d_work_ori = nullptr;
+    T *d_work1 = nullptr, *d_work2 = nullptr, *d_work_ori = nullptr;
 
     /* step 1: create cusolver handle, bind a stream */
     // CUSOLVER_CHECK(cusolverDnCreate(&cusolverH));
@@ -50,18 +49,29 @@ void test_tsqr(int block_size, int m, int n) {
     /* step 2: copy A to device */
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(T) * m * n));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_R), sizeof(T) * n * n));
-    CUDA_CHECK(
-        cudaMalloc(reinterpret_cast<void **>(&d_work_ori), sizeof(T) * m * m));
+    // CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work_ori), sizeof(T) *
+    // m * m));
 
-    const int ldwork = m;
+    int ldwork1 = m, ldwork2;
+    int pre_reduction_time =
+        ceil((log(m) - log(13824)) / (log(block_size) - log(n)));
+    if (pre_reduction_time > 0) {
+        ldwork2 = 13824;
+        CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work1),
+                              pre_reduction_time * sizeof(T) * m * n));
+        CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work2),
+                              sizeof(T) * 13824 * n));
+    } else {
+        ldwork2 = m;
+        CUDA_CHECK(
+            cudaMalloc(reinterpret_cast<void **>(&d_work2), sizeof(T) * m * n));
+    }
 
-    CUDA_CHECK(
-        cudaMalloc(reinterpret_cast<void **>(&d_work), sizeof(T) * m * n));
     // # origianl
     // CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
     //                       cudaMemcpyHostToDevice));
-    // printf("\ntsqr_ori\n");
-    // tsqr_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr,
+    // printf("\nhou_tsqr_panel_ori\n");
+    // hou_tsqr_panel_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr,
     //                                d_work_ori);
     // CUDA_CHECK(cudaDeviceSynchronize());
     // CUDA_CHECK_LAST_ERROR();
@@ -70,14 +80,13 @@ void test_tsqr(int block_size, int m, int n) {
     // printf("Q\n");
     // printDeviceMatrixV2(d_A, lda, m < 169 ? m : 169, 32);
 
-    // # new
     CUDA_CHECK(cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(),
                           cudaMemcpyHostToDevice));
     // printf("A\n");
-    // printDeviceMatrixV2(d_A, lda, m < 169 ? m : 169, 32);
+    // printDeviceMatrixV2(d_A, lda, 1024, n);
     // printf("tsqr\n");
-    tsqr<T>(cublasH, block_size, m, n, d_A, lda, d_R, ldr, d_work,
-                      ldwork);
+    tsqr<T>(cublasH, block_size, m, n, d_A, lda, d_R, ldr, d_work1, ldwork1,
+            d_work2, ldwork2);
     CUDA_CHECK(cudaDeviceSynchronize());
     CUDA_CHECK_LAST_ERROR();
     // printf("R\n");
@@ -85,15 +94,17 @@ void test_tsqr(int block_size, int m, int n) {
     // printf("Q\n");
     // printDeviceMatrixV2(d_A, lda, m < 32 ? m : 32, n < 32 ? n : 32);
 
-    // T *d_Q = nullptr;
-    // CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_Q), sizeof(T) * n *
-    // n)); cublasDgemm(cublasH, CUBLAS_OP_T, CUBLAS_OP_N, n, n, m, &kOne, d_A,
-    //             lda, d_A, lda, &kZero, d_Q, n);
+    T *d_Q = nullptr;
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_Q), sizeof(T) * n * n));
+    cublasDgemm(cublasH, CUBLAS_OP_T, CUBLAS_OP_N, n, n, m, &kOne, d_A, lda,
+                d_A, lda, &kZero, d_Q, n);
     // printDeviceMatrixV2(d_Q, n, n, n);
 
     cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, m, n, n, &kOne, d_A, lda,
                 d_R, ldr, &kZero, d_A, lda);
     CUDA_CHECK(cudaDeviceSynchronize());
+    // printf("Q * R\n");
+    // printDeviceMatrixV2(d_A, lda, 1024, n);
 
     CUDA_CHECK(cudaMemcpyAsync(A_from_gpu.data(), d_A,
                                sizeof(T) * A_from_gpu.size(),
@@ -113,8 +124,8 @@ void test_tsqr(int block_size, int m, int n) {
         cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
         CUDA_CHECK(cudaDeviceSynchronize());
         // printf("warmup %d\n", i);
-        tsqr<T>(cublasH, block_size, m, n, d_A, lda, d_R, ldr, d_work,
-                          ldwork);
+        tsqr<T>(cublasH, block_size, m, n, d_A, lda, d_R, ldr, d_work1, ldwork1,
+                d_work2, ldwork2);
         CUDA_CHECK(cudaDeviceSynchronize());
     }
     CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -124,8 +135,8 @@ void test_tsqr(int block_size, int m, int n) {
         // printf("repeat %d\n", i);
         CUDA_CHECK(cudaEventRecord(start, stream));
 
-        tsqr<T>(cublasH, block_size, m, n, d_A, lda, d_R, ldr, d_work,
-                          ldwork);
+        tsqr<T>(cublasH, block_size, m, n, d_A, lda, d_R, ldr, d_work1, ldwork1,
+                d_work2, ldwork2);
 
         CUDA_CHECK(cudaEventRecord(stop, stream));
         CUDA_CHECK(cudaDeviceSynchronize());
@@ -150,8 +161,9 @@ void test_tsqr(int block_size, int m, int n) {
     /* free resources */
     CUDA_CHECK(cudaFree(d_A));
     CUDA_CHECK(cudaFree(d_R));
-    CUDA_CHECK(cudaFree(d_work));
     CUDA_CHECK(cudaFree(d_work_ori));
+    CUDA_CHECK(cudaFree(d_work1));
+    CUDA_CHECK(cudaFree(d_work2));
 
     // CUSOLVER_CHECK(cusolverDnDestroy(cusolverH));
     CUBLAS_CHECK(cublasDestroy(cublasH));
@@ -169,7 +181,7 @@ int main(int argc, char *argv[]) {
     int block_size = 128;
     int dataType = 2;
 
-    print_device_info();
+    // print_device_info();
 
     if (argc >= 4) {
         m = atoi(argv[1]);
