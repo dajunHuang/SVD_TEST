@@ -50,6 +50,7 @@ void tsqr(cublasHandle_t cublas_handle, int block_size, int m, int n,
 
     if (grid_num > 1) {
         assert((m % max_grid_size) % n == 0);
+        assert(block_size % n == 0);
 
         int reduction_time =
             ceil((log(max_grid_size) - log(n)) / (log(block_size) - log(n)));

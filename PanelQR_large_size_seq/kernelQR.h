@@ -28,7 +28,7 @@ __device__ void block_gemm(int m, int n, T *C, const int ldc, T *A,
              ++col_repeat_idx) {
             int col_idx = col_repeat_idx * block_dim_y + thread_idx_y;
             if (col_idx >= n) break;
-            double sum = 0;
+            T sum = 0;
             for (int k = 0; k < n; ++k) {
                 sum += A[row_idx + k * lda] * B[k + col_idx * ldb];
             }

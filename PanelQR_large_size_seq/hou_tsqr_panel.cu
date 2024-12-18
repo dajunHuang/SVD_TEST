@@ -117,7 +117,6 @@ void test_tsqr(int block_size, int m, int n) {
     for (int i{0}; i < NUM_WARPUP; ++i) {
         cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
         CUDA_CHECK(cudaDeviceSynchronize());
-        // printf("warmup %d\n", i);
         tsqr<T>(cublasH, block_size, m, n, d_A, lda, d_R, ldr,
                           d_work1, ldwork1, d_work2, ldwork2);
         CUDA_CHECK(cudaDeviceSynchronize());
@@ -126,7 +125,6 @@ void test_tsqr(int block_size, int m, int n) {
     for (int i{0}; i < NUM_REPEAT; ++i) {
         cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
         CUDA_CHECK(cudaDeviceSynchronize());
-        // printf("repeat %d\n", i);
         CUDA_CHECK(cudaEventRecord(start, stream));
 
         tsqr<T>(cublasH, block_size, m, n, d_A, lda, d_R, ldr,
