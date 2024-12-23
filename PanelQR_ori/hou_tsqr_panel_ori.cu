@@ -6,7 +6,6 @@
 #include <cuda_runtime.h>
 #include <cusolverDn.h>
 #include "TallShinnyQR_ori.h"
-#include "cusolver_utils.h"
 
 #include <algorithm>
 #include <iostream>
@@ -56,6 +55,8 @@ void test_hou_tsqr_panel_ori(long m, long n)
     hou_tsqr_panel_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
     CUDA_CHECK_LAST_ERROR();
 
+    // check_QR_accuracy<T>(m, n, d_A, lda, d_R, ldr, A);
+
     cudaEvent_t start, stop;
     float time = 0, temp_time = 0;
 
@@ -64,15 +65,19 @@ void test_hou_tsqr_panel_ori(long m, long n)
     for(int i{0}; i < NUM_WARPUP; ++i)
     {
         cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
+        CUDA_CHECK(cudaDeviceSynchronize());
         hou_tsqr_panel_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
+        CUDA_CHECK(cudaDeviceSynchronize());
     }
     CUDA_CHECK(cudaStreamSynchronize(stream));
     for(int i{0}; i < NUM_REPEAT; ++i)
     {
         cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
+        CUDA_CHECK(cudaDeviceSynchronize());
         CUDA_CHECK(cudaEventRecord(start, stream));
 
         hou_tsqr_panel_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         CUDA_CHECK(cudaEventRecord(stop, stream));
         CUDA_CHECK(cudaEventSynchronize(stop));

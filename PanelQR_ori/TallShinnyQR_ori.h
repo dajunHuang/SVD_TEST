@@ -5,7 +5,7 @@
 #include <iostream>
 
 #include "kernelQR_ori.h"
-#include "myBase.h"
+#include "utils.h"
 
 // 注意M必须<=256,N必须<=32
 // 另外n必须<=N
@@ -26,7 +26,7 @@ void hou_tsqr_panel_ori(cublasHandle_t cublas_handle, long m, long n, T *A,
         // 调用核函数进行QR分解
         // 分解后A矩阵中存放的是Q矩阵，R矩阵中存放的是R矩阵
         my_hou_kernel_ori<T, M, N><<<1, blockDim>>>(m, n, A, lda, R, ldr);
-        CHECK(cudaGetLastError());
+        CUDA_CHECK(cudaGetLastError());
         cudaDeviceSynchronize();
         return;
     }
