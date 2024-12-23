@@ -137,9 +137,9 @@ void test_tsqr(int block_size, int m, int n) {
 
         tsqr<T>(cublasH, block_size, m, n, d_A, lda, d_R, ldr, d_work1, ldwork1,
                 d_work2, ldwork2);
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         CUDA_CHECK(cudaEventRecord(stop, stream));
-        CUDA_CHECK(cudaDeviceSynchronize());
         CUDA_CHECK(cudaEventSynchronize(stop));
         CUDA_CHECK_LAST_ERROR();
         CUDA_CHECK(cudaEventElapsedTime(&temp_time, start, stop));
