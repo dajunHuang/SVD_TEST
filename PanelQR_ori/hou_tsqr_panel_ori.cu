@@ -10,8 +10,8 @@
 #include <algorithm>
 #include <iostream>
 
-#define NUM_WARPUP 20
-#define NUM_REPEAT 50
+#define NUM_WARPUP 2
+#define NUM_REPEAT 5
 
 template <typename T>
 void test_hou_tsqr_panel_ori(long m, long n)
@@ -67,7 +67,6 @@ void test_hou_tsqr_panel_ori(long m, long n)
         cudaMemcpy(d_A, A.data(), sizeof(T) * A.size(), cudaMemcpyHostToDevice);
         CUDA_CHECK(cudaDeviceSynchronize());
         hou_tsqr_panel_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
-        CUDA_CHECK(cudaDeviceSynchronize());
     }
     CUDA_CHECK(cudaStreamSynchronize(stream));
     for(int i{0}; i < NUM_REPEAT; ++i)
@@ -77,7 +76,6 @@ void test_hou_tsqr_panel_ori(long m, long n)
         CUDA_CHECK(cudaEventRecord(start, stream));
 
         hou_tsqr_panel_ori<T, 128, 32>(cublasH, m, n, d_A, lda, d_R, ldr, d_work);
-        CUDA_CHECK(cudaDeviceSynchronize());
 
         CUDA_CHECK(cudaEventRecord(stop, stream));
         CUDA_CHECK(cudaEventSynchronize(stop));
@@ -87,12 +85,13 @@ void test_hou_tsqr_panel_ori(long m, long n)
     }
     time /= NUM_REPEAT;
 
+    std::cout << "hou_tsqr_panel Latency: " << time << " ms" << std::endl;
+
     CUDA_CHECK(cudaMemcpyAsync(A_from_gpu.data(), d_A, sizeof(T) * A_from_gpu.size(), cudaMemcpyDeviceToHost, stream));
     CUDA_CHECK(cudaMemcpyAsync(R_from_gpu.data(), d_R, sizeof(T) * R_from_gpu.size(), cudaMemcpyDeviceToHost, stream));
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
-    std::cout << "hou_tsqr_panel Latency: " << time << " ms" << std::endl;
 
     /* free resources */
     CUDA_CHECK(cudaFree(d_A));
