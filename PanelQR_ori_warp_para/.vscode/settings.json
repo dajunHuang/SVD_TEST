@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "*.inc": "plaintext",
+        "*.scpp": "cuda-cpp",
+        "type_traits": "cpp",
+        "ostream": "cpp"
+    }
+}

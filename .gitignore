@@ -21,6 +21,7 @@ ozimmu/ozimmu_test_double
 tcgemm/tcgemm_FP162FP32_float
 
 PanelQR_ori/hou_tsqr_panel_ori
+PanelQR_ori_warp_para/hou_tsqr_panel_ori
 PanelQR_large_size_para/hou_tsqr_panel
 PanelQR_large_size_seq/hou_tsqr_panel
 
