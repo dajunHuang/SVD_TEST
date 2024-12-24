@@ -8,7 +8,7 @@
 #include <iostream>
 #include <vector>
 
-#include "TallShinnyQR_ori.h"
+#include "TallShinnyQR.h"
 
 #define NUM_WARPUP 2
 #define NUM_REPEAT 5
@@ -48,7 +48,7 @@ void test_tsqr(long m, long n) {
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(T) * m * n));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_R), sizeof(T) * n * n));
     CUDA_CHECK(
-        cudaMalloc(reinterpret_cast<void **>(&d_work), sizeof(T) * m * m));
+        cudaMalloc(reinterpret_cast<void **>(&d_work), sizeof(T) * m * n * 16));
     CUDA_CHECK(cudaMemcpyAsync(d_A, A.data(), sizeof(T) * A.size(),
                                cudaMemcpyHostToDevice, stream));
 
@@ -112,7 +112,7 @@ template void test_tsqr<float>(long m, long n);
 template void test_tsqr<double>(long m, long n);
 
 int main(int argc, char *argv[]) {
-    long m = 13824, n = 32, dataType = 2;
+    long m = 16384, n = 32, dataType = 2;
 
     if (argc >= 4) {
         m = atoi(argv[1]);

@@ -1,8 +1,7 @@
 #include <cuda_fp16.h>
 
-#define BLOCK_SIZE 128
+#define BLOCK_SIZE 256
 #define BLOCK_DIM_Y 16
-#define NUM_Q_COL 2  // (n + BLOCK_DIM_Y - 1) / BLOCK_DIM_Y;
 #define BLOCK_DIM_X 32
 #define NUM_Q_ROW (BLOCK_SIZE + BLOCK_DIM_X - 1) / BLOCK_DIM_X
 #define MAX_N 32
@@ -26,7 +25,7 @@ struct shared_memory<double> {
 
 #pragma once
 template <typename T>
-static __inline__ __device__ T warpAllReduceSum_ori(T val) {
+static __inline__ __device__ T warpAllReduceSum(T val) {
     for (int mask = warpSize / 2; mask > 0; mask /= 2) {
         val += __shfl_xor_sync(0xffffffff, val, mask);
     }
@@ -60,18 +59,21 @@ __global__ void tsqr_kernel(int m, int n, T *A, int lda, T *R, int ldr) {
     R = R + block_idx_x * n;
 
     // 每个线程处理的数据个数
-    int rowDataNum = (block_data_height + (block_dim_x - 1)) / block_dim_x;
-    int colDataNum = (n + (block_dim_y - 1)) / block_dim_y;
+    int num_data_row = (block_data_height + block_dim_x - 1) / block_dim_x;
+    int num_data_col = (n + block_dim_y - 1) / block_dim_y;
 
     T acc[NUM_Q_ROW];
 
     // 假定n=N=32，每一个线程拷贝2列
-    for (int k = 0; k < rowDataNum; k++) {
-        if (thread_idx_x + k * block_dim_x < block_data_height) {
-            AA[thread_idx_x + k * block_dim_x + thread_idx_y * ldsa] =
-                A[thread_idx_x + k * block_dim_x + thread_idx_y * lda];
-            AA[thread_idx_x + k * block_dim_x + (thread_idx_y + 16) * ldsa] =
-                A[thread_idx_x + k * block_dim_x + (thread_idx_y + 16) * lda];
+    for (int k = 0; k < num_data_row; ++k) {
+        int row_idx = thread_idx_x + k * block_dim_x;
+        if (row_idx < block_data_height) {
+            for (int h = 0; h < num_data_col; ++h) {
+                int col_idx = thread_idx_y + h * block_dim_y;
+                if (col_idx < n) {
+                    AA[row_idx + col_idx * ldsa] = A[row_idx + col_idx * lda];
+                }
+            }
         }
     }
 
@@ -90,28 +92,28 @@ __global__ void tsqr_kernel(int m, int n, T *A, int lda, T *R, int ldr) {
             // 0.求normx
             // 是将下面的循环体进行展开，提高效率，所以需要acc[dataNum]
 #pragma unroll
-            for (int k = 0; k < rowDataNum; k++) {
+            for (int k = 0; k < num_data_row; k++) {
                 acc[k] = 0.0;
+                int row_idx = thread_idx_x + k * block_dim_x;
                 // if条件中，前部部分是为了防止最后一个block中线程行越界；后半部分在计算HouseHolder向量是只计算对角线一下的元素
-                if (thread_idx_x + k * block_dim_x < block_data_height &&
-                    thread_idx_x + k * block_dim_x >= cols) {
-                    acc[k] = AA[thread_idx_x + k * block_dim_x + cols * ldsa] *
-                             AA[thread_idx_x + k * block_dim_x + cols * ldsa];
+                if (row_idx < block_data_height && row_idx >= cols) {
+                    acc[k] =
+                        AA[row_idx + cols * ldsa] * AA[row_idx + cols * ldsa];
                 }
                 nu += acc[k];
             }
 
             // 需要将1个lane中所有线程求出的norm_squre加到一起,同时进行同步
-            T norm_x_squre = warpAllReduceSum_ori(nu);
+            T norm_x_squre = warpAllReduceSum(nu);
             T norm_x = sqrt(norm_x_squre);
 
             // 1、求u=x/norm(x);
             T scale = 1.0 / norm_x;
 #pragma unroll
-            for (int k = 0; k < rowDataNum; k++) {
-                if (thread_idx_x + k * block_dim_x < block_data_height &&
-                    thread_idx_x + k * block_dim_x >= cols) {
-                    AA[thread_idx_x + k * block_dim_x + cols * ldsa] *= scale;
+            for (int k = 0; k < num_data_row; k++) {
+                int row_idx = thread_idx_x + k * block_dim_x;
+                if (row_idx < block_data_height && row_idx >= cols) {
+                    AA[row_idx + cols * ldsa] *= scale;
                 }
             }
 
@@ -132,10 +134,10 @@ __global__ void tsqr_kernel(int m, int n, T *A, int lda, T *R, int ldr) {
             // 3、u=u/sqrt(abs(u(1))),计算HouseHolder向量
             scale = 1 / (sqrt(abs(AA[cols + cols * ldsa])));
 #pragma unroll
-            for (int k = 0; k < rowDataNum; k++) {
-                if (thread_idx_x + k * block_dim_x < block_data_height &&
-                    thread_idx_x + k * block_dim_x >= cols) {
-                    AA[thread_idx_x + k * block_dim_x + cols * ldsa] *= scale;
+            for (int k = 0; k < num_data_row; k++) {
+                int row_idx = thread_idx_x + k * block_dim_x;
+                if (row_idx < block_data_height && row_idx >= cols) {
+                    AA[row_idx + cols * ldsa] *= scale;
                 }
             }
         }
@@ -144,7 +146,7 @@ __global__ void tsqr_kernel(int m, int n, T *A, int lda, T *R, int ldr) {
         // 用HouseHolder向量去更新HouseHolder向量所在列后面的所有列
         // 因为(I-uu')x=x-uu'x，先计算u'x，在计算x-uu'x
         // 每个线程按列需要处理多个列
-        for (int h = 0; h < colDataNum; h++) {
+        for (int h = 0; h < num_data_col; h++) {
             T nu = 0.0;
             int opCols = thread_idx_y + h * block_dim_y;
 
@@ -152,28 +154,26 @@ __global__ void tsqr_kernel(int m, int n, T *A, int lda, T *R, int ldr) {
             if (cols < opCols && opCols <= n) {
                 // 先计算u'x
 #pragma unroll
-                for (int k = 0; k < rowDataNum; k++) {
+                for (int k = 0; k < num_data_row; k++) {
                     acc[k] = 0.0;
+                    int row_idx = thread_idx_x + k * block_dim_x;
                     // if条件中，前部部分是为了防止最后一个block中线程行越界；后半部分在计算HouseHolder向量是只计算对角线一下的元素
-                    if (thread_idx_x + k * block_dim_x < block_data_height &&
-                        thread_idx_x + k * block_dim_x >= cols) {
-                        acc[k] =
-                            AA[thread_idx_x + k * block_dim_x + cols * ldsa] *
-                            AA[thread_idx_x + k * block_dim_x + opCols * ldsa];
+                    if (row_idx < block_data_height && row_idx >= cols) {
+                        acc[k] = AA[row_idx + cols * ldsa] *
+                                 AA[row_idx + opCols * ldsa];
                     }
                     nu += acc[k];
                 }
-                T utx = warpAllReduceSum_ori(nu);
+                T utx = warpAllReduceSum(nu);
 
                 // 计算x-uu'x
 #pragma unroll
-                for (int k = 0; k < rowDataNum; k++) {
+                for (int k = 0; k < num_data_row; k++) {
+                    int row_idx = thread_idx_x + k * block_dim_x;
                     // if条件中，前部部分是为了防止最后一个block中线程行越界；后半部分在计算HouseHolder向量是只计算对角线一下的元素
-                    if (thread_idx_x + k * block_dim_x < block_data_height &&
-                        thread_idx_x + k * block_dim_x >= cols) {
-                        AA[thread_idx_x + k * block_dim_x + opCols * ldsa] -=
-                            utx *
-                            AA[thread_idx_x + k * block_dim_x + cols * ldsa];
+                    if (row_idx < block_data_height && row_idx >= cols) {
+                        AA[row_idx + opCols * ldsa] -=
+                            utx * AA[row_idx + cols * ldsa];
                     }
                 }
                 __syncwarp();
@@ -187,19 +187,19 @@ __global__ void tsqr_kernel(int m, int n, T *A, int lda, T *R, int ldr) {
     // 获得R矩阵，将AA的上三角部分拷贝到R中
     // 以R矩阵来进行循环
     int rRowDataNum = (n + (block_dim_x - 1)) / block_dim_x;
-    for (int h = 0; h < colDataNum; h++) {
+    for (int h = 0; h < num_data_col; h++) {
         int opCols = thread_idx_y + h * block_dim_y;
 
         if (opCols >= n) continue;
 
 #pragma unroll
         for (int k = 0; k < rRowDataNum; k++) {
-            if (thread_idx_x + k * block_dim_x < opCols) {
-                R[thread_idx_x + k * block_dim_x + opCols * ldr] =
-                    AA[thread_idx_x + k * block_dim_x + opCols * ldsa];
-                AA[thread_idx_x + k * block_dim_x + opCols * ldsa] = 0.0;
-            } else if (thread_idx_x + k * block_dim_x > opCols) {
-                R[thread_idx_x + k * block_dim_x + opCols * ldr] = 0.0;
+            int row_idx = thread_idx_x + k * block_dim_x;
+            if (row_idx < opCols) {
+                R[row_idx + opCols * ldr] = AA[row_idx + opCols * ldsa];
+                AA[row_idx + opCols * ldsa] = 0.0;
+            } else if (row_idx > opCols) {
+                R[row_idx + opCols * ldr] = 0.0;
             } else {
                 // 这个赋值完全可以放到上面RR的赋值哪儿，从而不需要RR的共享内存
                 R[opCols + opCols * ldr] = RR[opCols];
@@ -209,14 +209,14 @@ __global__ void tsqr_kernel(int m, int n, T *A, int lda, T *R, int ldr) {
 
     // 来求Q，使用的方法是Q=(I-uu')Q, 所以对于Q的一列而言q=(I-uu')q，计算q-uu'q
     // q表示是Q矩阵的1列
-    T q[NUM_Q_ROW * NUM_Q_COL];
-    for (int h = 0; h < colDataNum; h++) {
+    T q[NUM_Q_ROW];
+    for (int h = 0; h < num_data_col; h++) {
         // 1、构造出每个线程需要处理的Q矩阵的一列q的一部分
         int opCols = thread_idx_y + h * block_dim_y;
 
         if (opCols >= n) continue;
 
-        for (int k = 0; k < rowDataNum; k++) {
+        for (int k = 0; k < num_data_row; k++) {
             if (thread_idx_x + k * block_dim_x == opCols) {
                 q[k] = 1.0;
             } else {
@@ -233,24 +233,22 @@ __global__ void tsqr_kernel(int m, int n, T *A, int lda, T *R, int ldr) {
             if (opCols >= cols) {
                 // 2、计算u'q
                 T nu = 0.0;
-                for (int k = 0; k < rowDataNum; k++) {
+                for (int k = 0; k < num_data_row; k++) {
                     acc[k] = 0.0;
-                    if (thread_idx_x + k * block_dim_x < block_data_height) {
-                        acc[k] =
-                            AA[thread_idx_x + k * block_dim_x + cols * ldsa] *
-                            q[k];
+                    int row_idx = thread_idx_x + k * block_dim_x;
+                    if (row_idx < block_data_height) {
+                        acc[k] = AA[row_idx + cols * ldsa] * q[k];
                     }
                     nu += acc[k];
                 }
 
-                T utq = warpAllReduceSum_ori(nu);
+                T utq = warpAllReduceSum(nu);
 
                 // 3.计算q-uu'q
-                for (int k = 0; k < rowDataNum; k++) {
-                    if (thread_idx_x + k * block_dim_x < block_data_height) {
-                        q[k] -=
-                            utq *
-                            AA[thread_idx_x + k * block_dim_x + cols * ldsa];
+                for (int k = 0; k < num_data_row; k++) {
+                    int row_idx = thread_idx_x + k * block_dim_x;
+                    if (row_idx < block_data_height) {
+                        q[k] -= utq * AA[row_idx + cols * ldsa];
                     }
                 }
 
@@ -259,9 +257,10 @@ __global__ void tsqr_kernel(int m, int n, T *A, int lda, T *R, int ldr) {
         }
 
         // 4.把计算出来的q拷贝到A中
-        for (int k = 0; k < rowDataNum; k++) {
-            if (thread_idx_x + k * block_dim_x < block_data_height) {
-                A[thread_idx_x + k * block_dim_x + opCols * lda] = q[k];
+        for (int k = 0; k < num_data_row; k++) {
+            int row_idx = thread_idx_x + k * block_dim_x;
+            if (row_idx < block_data_height) {
+                A[row_idx + opCols * lda] = q[k];
             }
         }
     }

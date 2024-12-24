@@ -4,7 +4,7 @@
 
 #include <iostream>
 
-#include "kernelQR_ori.h"
+#include "kernelQR.h"
 #include "utils.h"
 
 template <typename T>
