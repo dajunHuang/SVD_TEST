@@ -11,8 +11,8 @@
 #include <algorithm>
 #include <iostream>
 
-#define NUM_WARPUP 20
-#define NUM_REPEAT 50
+#define NUM_WARPUP 2
+#define NUM_REPEAT 5
 
 template <typename T>
 void random_initialize_matrix(T* A, size_t m, size_t n, size_t lda,
@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
     cublasHandle_t cublasH = NULL;
     cudaStream_t stream = NULL;
 
-    int m = 13824, n = 32;
+    int m = 16384, n = 32;
 
     if(argc >= 3)
     {

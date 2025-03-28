@@ -73,6 +73,9 @@ int main(int argc, char *argv[]) {
     int *devInfo = nullptr;
     int *devInfo1 = nullptr;
 
+    dim3 blockDim{32, 32, 1};
+    dim3 gridDim{static_cast<unsigned int>((m + 31) / 32), static_cast<unsigned int>((n + 31) / 32), 1};
+
     /* step 1: create cusolver handle, bind a stream */
     CUSOLVER_CHECK(cusolverDnCreate(&cusolverH));
     CUBLAS_CHECK(cublasCreate(&cublasH));
@@ -113,9 +116,9 @@ int main(int argc, char *argv[]) {
                           cudaMemcpyHostToDevice));
     CUSOLVER_CHECK(cusolverDnSgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work,
                                     lwork, devInfo));
-    launchKernel_moveU({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+    launchKernel_moveU(gridDim, blockDim, m, n,
                        d_A, lda, d_R, ldr);
-    launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+    launchKernel_copyLower(gridDim, blockDim, m, n,
                            d_A, lda, d_Y, ldy);
     CUSOLVER_CHECK(cusolverDnSorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
                                     ldworkw, devInfo));
@@ -133,9 +136,9 @@ int main(int argc, char *argv[]) {
                             cudaMemcpyHostToDevice));
         CUSOLVER_CHECK(cusolverDnSgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work,
                                         lwork, devInfo));
-        launchKernel_moveU({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+        launchKernel_moveU(gridDim, blockDim, m, n,
                         d_A, lda, d_R, ldr);
-        launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+        launchKernel_copyLower(gridDim, blockDim, m, n,
                             d_A, lda, d_Y, ldy);
         CUSOLVER_CHECK(cusolverDnSorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
                                         ldworkw, devInfo1));
@@ -151,9 +154,9 @@ int main(int argc, char *argv[]) {
 
         CUSOLVER_CHECK(cusolverDnSgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work,
                                         lwork, devInfo));
-        launchKernel_moveU({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+        launchKernel_moveU(gridDim, blockDim, m, n,
                         d_A, lda, d_R, ldr);
-        launchKernel_copyLower({(m + 31) / 32, (n + 31) / 32, 1}, {32, 32, 1}, m, n,
+        launchKernel_copyLower(gridDim, blockDim, m, n,
                             d_A, lda, d_Y, ldy);                                       
         CUSOLVER_CHECK(cusolverDnSorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w,
                                         ldworkw, devInfo1));
