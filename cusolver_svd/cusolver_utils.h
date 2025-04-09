@@ -40,6 +40,7 @@
 #include <cublas_api.h>
 #include <cusolverDn.h>
 #include <library_types.h>
+#include <curand.h>
 
 // CUDA API error checking
 #define CUDA_CHECK(err)                                                                            \
@@ -317,4 +318,17 @@ cusolverIRSRefinement_t get_cusolver_refinement_solver(std::string solver_string
         printf("Unknown solver parameter: \"%s\"\n", solver_string.c_str());
 
     return CUSOLVER_IRS_REFINE_NOT_SET;
+}
+
+template <typename T>
+void generateUniformMatrix(T *dA, long lda, long n) {
+    curandGenerator_t gen;
+    curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+    int seed = 3000;
+    curandSetPseudoRandomGeneratorSeed(gen, seed);
+    if constexpr (std::is_same_v<T, float>) {
+        curandGenerateUniform(gen, dA, long(lda * n));
+    } else if constexpr (std::is_same_v<T, double>) {
+        curandGenerateUniformDouble(gen, dA, long(lda * n));
+    }
 }
