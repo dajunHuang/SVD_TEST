@@ -9,6 +9,7 @@
 
 #include "utils.h"
 
+#define NUM_WARMUP 5
 #define NUM_REPEAT 1
 
 int main(int argc, char *argv[]) {
@@ -49,7 +50,17 @@ int main(int argc, char *argv[]) {
     CUDA_CHECK(cudaEventCreate(&stop));
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
+    for (int i{0}; i < NUM_WARMUP; ++i) {
+        for (int j{0}; j < n / nb; ++j) {
+            cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_T, nb, nb, k, &one,
+                         d_A + j * nb, lda, d_A + j * nb,
+                         lda, &zero, d_C + j * nb + j * nb * ldc,
+                         ldc);
+        }
+    }
+
     for (int i{0}; i < NUM_REPEAT; ++i) {
+        CUDA_CHECK(cudaStreamSynchronize(stream));
         CUDA_CHECK(cudaEventRecord(start, stream));
 
         for (int j{0}; j < n / nb; ++j) {
@@ -74,7 +85,15 @@ int main(int argc, char *argv[]) {
               << (long)n / nb * 2 * nb * nb * k / time0 / 1e9
               << " TFLOPS" << std::endl;
 
+    for (int i{0}; i < NUM_WARMUP; ++i) {
+        cublasDgemmStridedBatched(
+            cublasH, CUBLAS_OP_N, CUBLAS_OP_T, nb, nb, k, &one, d_A,
+            lda, nb, d_A, lda, nb, &zero, d_C, ldc,
+            nb + nb * ldc, n / nb);
+    }
+
     for (int i{0}; i < NUM_REPEAT; ++i) {
+        CUDA_CHECK(cudaStreamSynchronize(stream));
         CUDA_CHECK(cudaEventRecord(start, stream));
 
         cublasDgemmStridedBatched(

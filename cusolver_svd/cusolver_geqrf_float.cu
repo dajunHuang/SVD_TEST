@@ -57,6 +57,9 @@ int main(int argc, char *argv[]) {
     std::uniform_real_distribution<float> dis(-1.0f, 1.0f);
     auto const rand = [&dis, &eng]() { return dis(eng); };
     std::generate(A.begin(), A.end(), rand);
+    for(int i = 0; i < m; ++i) {
+        A[i + 2 * m] = 0.0;
+    }
 
     int info_gpu = 0;                                  /* host copy of error info */
 

@@ -336,6 +336,21 @@ void generateNormalMatrixDouble(double *dA,long int m,long int n)
 	curandSetPseudoRandomGeneratorSeed(gen, seed);
     curandGenerateNormalDouble(gen, dA, m*n, 0, 1);
 }
+void generateUniformMatrix(float *dA, int m, int n) {
+    curandGenerator_t gen;
+    curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+    int seed = 3000;
+    curandSetPseudoRandomGeneratorSeed(gen, seed);
+    curandGenerateUniform(gen, dA, long(m * n));
+}
+void generateNormalMatrix(float *dA,long int m,long int n)
+{
+    curandGenerator_t gen;
+    curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+    int seed = rand()%3000;
+	curandSetPseudoRandomGeneratorSeed(gen, seed);
+    curandGenerateNormal(gen, dA, m*n, 0, 1);
+}
 
 template <typename T>
 void print_device_matrix(T *A, int lda, int m, int n) {

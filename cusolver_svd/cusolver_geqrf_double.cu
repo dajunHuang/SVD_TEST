@@ -120,15 +120,15 @@ int main(int argc, char *argv[]) {
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
-    // std::printf("after gesvd: info_gpu = %d\n", info_gpu);
-    // if (0 == info_gpu) {
-    //     std::printf("gesvd converges \n");
-    // } else if (0 > info_gpu) {
-    //     std::printf("%d-th parameter is wrong \n", -info_gpu);
-    //     exit(1);
-    // } else {
-    //     std::printf("WARNING: info = %d : gesvd does not converge \n", info_gpu);
-    // }
+    std::printf("after gesvd: info_gpu = %d\n", info_gpu);
+    if (0 == info_gpu) {
+        std::printf("gesvd converges \n");
+    } else if (0 > info_gpu) {
+        std::printf("%d-th parameter is wrong \n", -info_gpu);
+        exit(1);
+    } else {
+        std::printf("WARNING: info = %d : gesvd does not converge \n", info_gpu);
+    }
 
     std::cout << "Cusolver QRF (double) Latency: " << time << " ms" << std::endl;
 

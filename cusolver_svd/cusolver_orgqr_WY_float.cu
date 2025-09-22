@@ -14,6 +14,38 @@
 #define NUM_WARPUP 2
 #define NUM_REPEAT 5
 
+template <typename T>
+T nrm2(cublasHandle_t cublasH, long m, long n, T *d_A, long lda);
+template <>
+float nrm2(cublasHandle_t cublasH, long m, long n, float *d_A, long lda) {
+    float norm = 0;
+
+    if(lda != m) {
+        printf("lda must be equal to m");
+    }
+
+    CUBLAS_CHECK(cublasSnrm2(cublasH, m * n, d_A, 1, &norm));
+
+    return norm;
+}
+template <>
+double nrm2(cublasHandle_t cublasH, long m, long n, double *d_A, long lda) {
+    double norm = 0;
+
+    if(lda != m) {
+        printf("lda must be equal to m");
+    }
+
+    CUBLAS_CHECK(cublasDnrm2(cublasH, m * n, d_A, 1, &norm));
+
+    return norm;
+}
+
+__global__ void set_one(float *d_A, long lda, long m, long n) {
+    for(int i = 0; i < m; i++)
+        d_A[i + 2 * lda] = 0.0;
+}
+
 int main(int argc, char *argv[]) {
     cusolverDnHandle_t cusolverH = NULL;
     cublasHandle_t cublasH = NULL;
@@ -38,7 +70,8 @@ int main(int argc, char *argv[]) {
     int info_gpu1 = 0; /* host copy of error info */
 
     float *d_A = nullptr;
-    // float *d_Q = nullptr;
+    float *d_A_ori = nullptr;
+    float *d_QR = nullptr;
     float *d_Y = nullptr;
     float *d_R = nullptr;
     float *d_TAU = nullptr;
@@ -61,7 +94,8 @@ int main(int argc, char *argv[]) {
 
     /* step 2: copy A to device */
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(float) * m * n));
-    // CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_Q), sizeof(float) * m * m));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A_ori), sizeof(float) * m * n));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_QR), sizeof(float) * m * n));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_Y), sizeof(float) * m * n));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_R), sizeof(float) * n * n));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_TAU), sizeof(float) * minmn));
@@ -69,7 +103,8 @@ int main(int argc, char *argv[]) {
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&devInfo1), sizeof(int)));
 
     // CUDA_CHECK(
-    //     cudaMemcpyAsync(d_A, A.data(), sizeof(float) * A.size(), cudaMemcpyHostToDevice, stream));
+    //     cudaMemcpyAsync(d_A, A.data(), sizeof(float) * A.size(), cudaMemcpyHostToDevice,
+    //     stream));
 
     /* step 3: query working space of BRD */
     CUSOLVER_CHECK(cusolverDnSgeqrf_bufferSize(cusolverH, m, n, d_A, lda, &lwork));
@@ -78,12 +113,26 @@ int main(int argc, char *argv[]) {
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_work_w), sizeof(float) * ldworkw));
 
     generateUniformMatrix(d_A, lda, n);
+    set_one<<<1, 1>>>(d_A, lda, m, n);
+
+    CUDA_CHECK(cudaMemcpy(d_A_ori, d_A, sizeof(float) * m * n, cudaMemcpyDeviceToDevice));
     // launchKernel_Identity(gridDim, blockDim, m, n, d_Q, ldq);
     CUSOLVER_CHECK(cusolverDnSgeqrf(cusolverH, m, n, d_A, lda, d_TAU, d_work, lwork, devInfo));
     launchKernel_moveU(gridDim, blockDim, m, n, d_A, lda, d_R, ldr);
     launchKernel_copyLower(gridDim, blockDim, m, n, d_A, lda, d_Y, ldy);
     CUSOLVER_CHECK(
         cusolverDnSorgqr(cusolverH, m, n, n, d_A, lda, d_TAU, d_work_w, ldworkw, devInfo));
+
+    float one = 1, zero = 0;
+    CUBLAS_CHECK(cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, m, n, n, &one, d_A, lda, d_R, ldr,
+                             &zero, d_QR, lda));
+    float sonedouble = 1.0, snegonedobule = -1.0;
+    cublasSgeam(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, m, n, &sonedouble, d_QR, lda, &snegonedobule,
+                d_A_ori, lda, d_QR, lda);
+    float norm_qr = nrm2(cublasH, m, n, d_QR, lda),
+            norm_a = nrm2(cublasH, m, n, d_A_ori, lda);
+    printf("norm_qr: %.6e, norm_a: %.6e, forward error: %.6e\n",
+            norm_qr, norm_a, norm_qr / norm_a);
 
     cudaEvent_t start, stop;
     float time = 0, temp_time = 0;
@@ -126,26 +175,24 @@ int main(int argc, char *argv[]) {
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
-    std::printf("after geqrf: info_gpu = %d\n", info_gpu);
+    // std::printf("after geqrf: info_gpu = %d\n", info_gpu);
     if (0 == info_gpu) {
         std::printf("geqrf converges \n");
     } else if (0 > info_gpu) {
         std::printf("%d-th parameter is wrong \n", -info_gpu);
         exit(1);
     } else {
-        std::printf("WARNING: info = %d : geqrf does not converge \n",
-        info_gpu);
+        std::printf("WARNING: info = %d : geqrf does not converge \n", info_gpu);
     }
 
-    std::printf("after orgqr: info_gpu1 = %d\n", info_gpu1);
+    // std::printf("after orgqr: info_gpu1 = %d\n", info_gpu1);
     if (0 == info_gpu1) {
         std::printf("orgqr converges \n");
     } else if (0 > info_gpu1) {
         std::printf("%d-th parameter is wrong \n", -info_gpu1);
         exit(1);
     } else {
-        std::printf("WARNING: info = %d : orgqr does not converge \n",
-        info_gpu1);
+        std::printf("WARNING: info = %d : orgqr does not converge \n", info_gpu1);
     }
 
     std::cout << "m: " << m << ", n: " << n << ", Cusolver QRF + ORGQR (float) Latency: " << time
@@ -154,7 +201,8 @@ int main(int argc, char *argv[]) {
 
     /* free resources */
     CUDA_CHECK(cudaFree(d_A));
-    // CUDA_CHECK(cudaFree(d_Q));
+    CUDA_CHECK(cudaFree(d_A_ori));
+    CUDA_CHECK(cudaFree(d_QR));
     CUDA_CHECK(cudaFree(d_Y));
     CUDA_CHECK(cudaFree(d_R));
     CUDA_CHECK(cudaFree(d_TAU));

@@ -10,7 +10,7 @@
 #include "utils.h"
 
 #define NUM_WARPUP 5
-#define NUM_REPEAT 10
+#define NUM_REPEAT 20
 
 int main(int argc, char *argv[]) {
     cublasHandle_t cublasH = NULL;
@@ -24,11 +24,11 @@ int main(int argc, char *argv[]) {
         k = atoi(argv[3]);
     }
 
-    double *d_A = nullptr;
-    double *d_B = nullptr;
-    double *d_C = nullptr;
+    float *d_A = nullptr;
+    float *d_B = nullptr;
+    float *d_C = nullptr;
 
-    double one = 1, zero = 0;
+    float one = 1, zero = 0;
 
     CUBLAS_CHECK(cublasCreate(&cublasH));
     CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
@@ -38,14 +38,14 @@ int main(int argc, char *argv[]) {
 
     /* step 2: copy A to device */
     CUDA_CHECK(
-        cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(double) * lda * k));
+        cudaMalloc(reinterpret_cast<void **>(&d_A), sizeof(float) * lda * k));
     CUDA_CHECK(
-        cudaMalloc(reinterpret_cast<void **>(&d_B), sizeof(double) * ldb * n));
+        cudaMalloc(reinterpret_cast<void **>(&d_B), sizeof(float) * ldb * n));
     CUDA_CHECK(
-        cudaMalloc(reinterpret_cast<void **>(&d_C), sizeof(double) * ldc * n));
+        cudaMalloc(reinterpret_cast<void **>(&d_C), sizeof(float) * ldc * n));
 
-    generateUniformMatrixDouble(d_A, lda, k);
-    generateUniformMatrixDouble(d_B, ldb, n);
+    generateUniformMatrix(d_A, lda, k);
+    generateUniformMatrix(d_B, ldb, n);
     CUDA_CHECK(cudaDeviceSynchronize());
 
     cudaEvent_t start, stop;
@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
     CUDA_CHECK(cudaEventCreate(&start));
     CUDA_CHECK(cudaEventCreate(&stop));
     for (int i{0}; i < NUM_WARPUP; ++i) {
-        CUBLAS_CHECK(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+        CUBLAS_CHECK(cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
                                  &one, d_A, lda, d_B, ldb, &zero, d_C,
                                  ldc));  // CUBLAS_GEMM_ALGO0_TENSOR_OP
     }
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
         CUDA_CHECK(cudaStreamSynchronize(stream));
         CUDA_CHECK(cudaEventRecord(start, stream));
 
-        CUBLAS_CHECK(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+        CUBLAS_CHECK(cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
                                  &one, d_A, lda, d_B, ldb, &zero, d_C,
                                  ldc));  // CUBLAS_GEMM_ALGO0_TENSOR_OP
 
@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) {
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
-    std::cout << "[cublas dgemm] " << "m: " << m << ", n: " << n << ", k: " << k
+    std::cout << "[cublas sgemm] " << "m: " << m << ", n: " << n << ", k: " << k
               << ", "
               << "latency: " << time << " ms, "
               << "Effective TFLOPS: " << 2.0 * m * n * k / time / 1e9
