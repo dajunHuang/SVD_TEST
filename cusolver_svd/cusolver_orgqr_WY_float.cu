@@ -152,6 +152,7 @@ int main(int argc, char *argv[]) {
     for (int i{0}; i < NUM_REPEAT; ++i) {
         generateUniformMatrix(d_A, lda, n);
         // launchKernel_Identity(gridDim, blockDim, m, n, d_Q, ldq);
+        PUSH_RANGE("geqrf + orgqr", i);
         CUDA_CHECK(cudaDeviceSynchronize());
         CUDA_CHECK(cudaEventRecord(start, stream));
 
@@ -163,6 +164,7 @@ int main(int argc, char *argv[]) {
 
         CUDA_CHECK(cudaDeviceSynchronize());
         CUDA_CHECK(cudaEventRecord(stop, stream));
+        POP_RANGE;
         CUDA_CHECK(cudaEventSynchronize(stop));
         CUDA_CHECK_LAST_ERROR();
         CUDA_CHECK(cudaEventElapsedTime(&temp_time, start, stop));
